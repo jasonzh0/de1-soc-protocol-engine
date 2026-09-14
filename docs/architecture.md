@@ -27,7 +27,7 @@ Tiny Tapeout pins                                    v
 | `src/protocol_engine.v` | ISA, program memory, validity, cycle timing, fault behavior | Board pins, host command encoding, vendor primitives |
 | `src/program_loader.v` | Address/data staging, host commands, run control, loader errors | Pad names, clocks derived from host strobes, instruction execution |
 | `src/tt_um_jasonzh0_protocol_engine.v` | TT port names, strobe detection, status packing, output-enable gating | ISA logic, vendor I/O buffers |
-| `rtl/de1_soc_top.v` | Board reset synchronizer, demo loader, physical GPIO buffer behavior | A second copy of the engine |
+| `rtl/de1_soc_top.v` | Board reset synchronizer, demo loader, GPIO buffers, activity LED | A second copy of the engine |
 | `quartus/` | DE1 device, pin mapping, timing constraints | ASIC settings |
 | `info.yaml`, `src/config.json` | Tiny Tapeout source list and ASIC flow configuration | FPGA source/pin settings |
 
@@ -73,7 +73,8 @@ a separate module, then document the latency contract explicitly.
 
 ## Verification and source lists
 
-`make test-fpga` checks the existing DE1 UART demo. `make test-tt` loads and runs
+`make test-fpga` checks the DE1 UART demo and its activity LED (with the LED's
+transition threshold reduced for simulation). `make test-tt` loads and runs
 programs entirely through the Tiny Tapeout ports, including rewriting UART
 firmware, command errors, high addresses/wrap, invalid instructions, reset,
 deselection, and drive masks. Tests do not reach into private registers.

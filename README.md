@@ -25,7 +25,7 @@ execution. See [host commands and ASIC integration](docs/info.md) and
    Setup, and use JTAG mode. Add `quartus/output_files/de1_soc_demo.sof`, select
    Program/Configure for the FPGA, and click Start.
 6. Press and release **KEY[0]**. LEDR[0] indicates the program is loaded;
-   LEDR[1] indicates an invalid instruction.
+   LEDR[1] indicates an instruction fault; **LEDR[2] blinks with UART activity**.
 
 The project already selects `5CSEMA5F31C6`, the two RTL files, the top-level
 module, the 50 MHz clock constraint, and all 51 top-level pin assignments.
@@ -35,6 +35,16 @@ The target board is **DE1-SoC revision H1**. All 51 pin locations and I/O
 standards match **Terasic's Rev. H System CD v6.0.0**; they also match the earlier
 F/G reference. Terasic labels the checked support package Rev. H, not H1.
 See [the Quartus guide](docs/quartus.md) for wiring, sources, and troubleshooting.
+
+## Check execution without a receiver
+
+After programming and pressing KEY[0], expect LEDR[0] on, LEDR[1] off, and
+**LEDR[2] blinking approximately once per second** (half a second on/off).
+This indicator counts the engine's actual TX transitions, so blinking confirms
+the loaded program is generating output. It freezes if transitions stop and
+clears on reset or fault. It does not check the physical connector or decode
+UART data. Existing FPGA configurations need to be rebuilt/reprogrammed to get
+this new indicator.
 
 ## See the UART output
 

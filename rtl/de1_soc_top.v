@@ -4,7 +4,10 @@
 // DE1-SoC demo: repeatedly transmit UART 0x55, 115200 baud, 8N1.
 // Use the board's 50 MHz clock. KEY[0] is active-low reset.
 // GPIO_0[0] is TX; GPIO_0[0] means signal index, NOT header pin 0.
-module de1_soc_top (
+module de1_soc_top #(
+    // Positive transition count; smaller values allow fast simulation.
+    parameter integer HEARTBEAT_EDGES = 57600
+) (
     input  wire        CLOCK_50,
     input  wire [3:0]  KEY,
     output wire [9:0]  LEDR,
@@ -18,6 +21,12 @@ module de1_soc_top (
     wire [7:0] pin_out;
     wire [7:0] pin_oe;
     wire fault;
+    localparam integer HEARTBEAT_WIDTH =
+        (HEARTBEAT_EDGES > 1) ? $clog2(HEARTBEAT_EDGES) : 1;
+    localparam [HEARTBEAT_WIDTH-1:0] HEARTBEAT_LAST = HEARTBEAT_EDGES - 1;
+    reg [HEARTBEAT_WIDTH-1:0] activity_count;
+    reg tx_previous;
+    reg activity_led;
 
     // Asynchronous reset assertion, synchronous release.
     always @(posedge CLOCK_50 or negedge KEY[0]) begin
@@ -57,10 +66,32 @@ module de1_soc_top (
         .pin_out(pin_out), .pin_oe(pin_oe), .fault(fault)
     );
 
+    // Count actual engine TX transitions, not free-running clock cycles.
+    // The 0x55 demo produces about 115,200 transitions/second, so LEDR[2]
+    // changes state roughly every half second. No TX activity means no blink.
+    always @(posedge CLOCK_50 or negedge rst_n) begin
+        if (!rst_n) begin
+            activity_count <= 0;
+            tx_previous    <= 0;
+            activity_led   <= 0;
+        end else begin
+            tx_previous <= pin_out[0];
+            if (!loaded || fault) begin
+                activity_count <= 0;
+                activity_led   <= 0;
+            end else if (pin_oe[0] && (pin_out[0] != tx_previous)) begin
+                if (activity_count == HEARTBEAT_LAST) begin
+                    activity_count <= 0;
+                    activity_led <= !activity_led;
+                end else activity_count <= activity_count + 1'b1;
+            end
+        end
+    end
+
     // Hold UART idle high during loading; release pins if the core faults.
     assign GPIO_0[0] = fault ? 1'bz : (pin_oe[0] ? pin_out[0] : 1'b1);
     assign GPIO_0[35:1] = {35{1'bz}};
-    assign LEDR = {8'b0, fault, loaded};
+    assign LEDR = {7'b0, activity_led, fault, loaded};
 endmodule
 
 `default_nettype wire

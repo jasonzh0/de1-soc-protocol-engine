@@ -22,6 +22,13 @@
 8. Check Program/Configure and click Start.
 9. Press and release KEY[0] to reload the demonstration program.
 
+With no external receiver, check **LEDR[0] on, LEDR[1] off, LEDR[2] blinking**.
+LEDR[2] toggles every 57,600 engine TX transitions, about every half second for
+this UART demo. A blinking LED confirms output activity; LEDR[0] alone confirms
+only program loading. If output transitions stop, the activity LED holds its
+last state; reset and instruction faults clear it. This does not validate the
+external wiring or UART byte contents.
+
 Loading a SOF configures volatile FPGA memory; program again after power loss.
 The included project does not configure flash boot or the ARM HPS.
 
@@ -39,6 +46,7 @@ Selected assignments:
 | KEY[0] | AA14 | Active-low reset |
 | LEDR[0] | V16 | Program loaded |
 | LEDR[1] | W16 | Invalid instruction |
+| LEDR[2] | V17 | UART activity heartbeat |
 | GPIO_0[0] | AC18 | UART TX |
 
 These are FPGA package pins, not GPIO connector pin numbers.
