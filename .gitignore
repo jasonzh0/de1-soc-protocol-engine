@@ -15,5 +15,6 @@
 /quartus/*.jdi
 /quartus/*.sld
 /quartus/*.bak
+quartus/c5_pin_model_dump.txt
 *.vcd
 *.fst
