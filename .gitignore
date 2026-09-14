@@ -4,6 +4,7 @@
 /quartus/incremental_db/
 /quartus/output_files/
 /quartus/simulation/
+/quartus/c5_pin_model_dump.txt
 /quartus/*.qws
 /quartus/*.qdf
 /quartus/*.qmsg
