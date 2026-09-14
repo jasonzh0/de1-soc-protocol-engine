@@ -80,7 +80,7 @@ as timing closure or board verification.
 | --- | --- |
 | Device not installed | Install Cyclone V device support for your Quartus version |
 | Top-level entity missing | Open the QPF; the entity is `de1_soc_top` |
-| Source file missing | Keep `rtl` and `quartus` in their original relative locations |
+| Source file missing | Keep `src`, `rtl`, and `quartus` in their original relative locations |
 | No USB-Blaster detected | Check J13, cable, power, driver, and OS permissions |
 | USB-Blaster detected but FPGA missing | On Rev. H/H1, check SW17.1 = 1 and SW17.2 = 0, then Auto Detect |
 | Terminal is blank | Use an external 3.3 V USB-UART adapter on GPIO_0[0], common ground, 115200 8N1; press reset |

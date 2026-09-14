@@ -2,7 +2,7 @@ set_global_assignment -name FAMILY "Cyclone V"
 set_global_assignment -name DEVICE 5CSEMA5F31C6
 set_global_assignment -name TOP_LEVEL_ENTITY de1_soc_top
 set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
-set_global_assignment -name VERILOG_FILE ../rtl/protocol_engine.v
+set_global_assignment -name VERILOG_FILE ../src/protocol_engine.v
 set_global_assignment -name VERILOG_FILE ../rtl/de1_soc_top.v
 set_global_assignment -name SDC_FILE de1_soc_demo.sdc
 set_global_assignment -name RESERVE_ALL_UNUSED_PINS "AS INPUT TRI-STATED"

@@ -18,6 +18,7 @@ module protocol_engine (
     output reg        fault
 );
     reg [15:0] program_mem [0:31];
+    reg [31:0] program_valid;
     reg [4:0] pc;
     reg [11:0] wait_left;
     wire [15:0] instruction;
@@ -25,10 +26,17 @@ module protocol_engine (
     assign instruction = program_mem[pc];
 
     // Host must halt the engine before writing its program.
-    // Memory is deliberately not initialized or reset: load before run.
+    // Memory bits are not reset. Valid bits prevent executing unwritten words.
     always @(posedge clk) begin
         if (rst_n && prog_we && !run)
             program_mem[prog_addr] <= prog_data;
+    end
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            program_valid <= 0;
+        else if (prog_we && !run)
+            program_valid[prog_addr] <= 1'b1;
     end
 
     always @(posedge clk or negedge rst_n) begin
@@ -47,6 +55,9 @@ module protocol_engine (
         end else if (!fault) begin
             if (wait_left != 0) begin
                 wait_left <= wait_left - 1'b1;
+            end else if (!program_valid[pc]) begin
+                fault  <= 1'b1;
+                pin_oe <= 0;
             end else begin
                 pc <= pc + 1'b1;
                 case (instruction[15:12])
