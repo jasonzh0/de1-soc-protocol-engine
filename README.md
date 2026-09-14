@@ -12,7 +12,8 @@ project for the Terasic DE1-SoC. The included demo repeatedly sends ASCII `U`
 3. In Quartus, select **File → Open Project** and open
    **[`quartus/de1_soc_demo.qpf`](quartus/de1_soc_demo.qpf)**.
 4. Select **Processing → Start Compilation**.
-5. Open **Tools → Programmer**, select the board's USB-Blaster in Hardware
+5. On Rev. H/H1, set **SW17.1 = 1, SW17.2 = 0** to select the FPGA JTAG path.
+   Open **Tools → Programmer**, select the board's USB-Blaster in Hardware
    Setup, and use JTAG mode. Add `quartus/output_files/de1_soc_demo.sof`, select
    Program/Configure for the FPGA, and click Start.
 6. Press and release **KEY[0]**. LEDR[0] indicates the program is loaded;
@@ -22,9 +23,10 @@ The project already selects `5CSEMA5F31C6`, the two RTL files, the top-level
 module, the 50 MHz clock constraint, and all 51 top-level pin assignments.
 No New Project Wizard or manual source-file setup is needed.
 
-The pin map is verified against **Terasic's Rev. F/G System CD**. Check the
-mapping against your manual if you have another revision. See
-[the Quartus guide](docs/quartus.md) for wiring, sources, and troubleshooting.
+The target board is **DE1-SoC revision H1**. All 51 pin locations and I/O
+standards match **Terasic's Rev. H System CD v6.0.0**; they also match the earlier
+F/G reference. Terasic labels the checked support package Rev. H, not H1.
+See [the Quartus guide](docs/quartus.md) for wiring, sources, and troubleshooting.
 
 ## See the UART output
 
@@ -57,7 +59,8 @@ make test
 ```
 
 Expected result: `PASS: decoded three UART frames of 0x55`.
-GitHub Actions runs the same test on pushes and pull requests.
+The GitHub Actions workflow runs the same test when enabled. **CI is currently
+paused** in this repository's Actions settings; local `make test` still works.
 
 To compile with Quartus on your PATH:
 

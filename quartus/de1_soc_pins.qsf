@@ -1,4 +1,5 @@
-# DE1-SoC Rev. F/G pin map, verified against Terasic System CD v5.1.3.
+# DE1-SoC pin map, verified against Rev. H System CD v6.0.0 for the H1 target.
+# All 51 locations and I/O standards also match Rev. F/G System CD v5.1.3.
 # Source: Demonstrations/FPGA/DE1_SOC_golden_top/DE1_SOC_golden_top.qsf
 # See docs/quartus.md for source URL and board revision notes.
 set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to {CLOCK_50}

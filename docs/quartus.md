@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Terasic DE1-SoC with Cyclone V `5CSEMA5F31C6`.
+- Target board: Terasic DE1-SoC revision H1, Cyclone V `5CSEMA5F31C6`.
 - Quartus Prime Lite or Standard with Cyclone V device support.
 - A supported Windows or Linux host. Quartus has no native macOS build.
 - USB-Blaster driver/access configured for programming.
@@ -13,7 +13,8 @@
 2. Select **File → Open Project → quartus/de1_soc_demo.qpf**.
 3. Confirm the project hierarchy shows `de1_soc_top`.
 4. Select **Processing → Start Compilation**. Review errors and timing reports.
-5. Connect the board's USB-Blaster port and power on the board.
+5. For Rev. H/H1, select the FPGA JTAG path with **SW17.1 = 1, SW17.2 = 0**.
+   Connect the board's USB-Blaster II port (J13) and power on the board.
 6. Select **Tools → Programmer → Hardware Setup → USB-Blaster** (the displayed
    name may include II), and select JTAG mode.
 7. Add `quartus/output_files/de1_soc_demo.sof`. If you use Auto Detect, assign
@@ -42,13 +43,21 @@ Selected assignments:
 
 These are FPGA package pins, not GPIO connector pin numbers.
 
-Pin locations and I/O standards were checked against Terasic's official
-[DE1-SoC Rev. F/G System CD v5.1.3](https://download.terasic.com/downloads/cd-rom/de1-soc/DE1-SoC_v.5.1.3_HWrevF.revG_SystemCD.zip),
+All 51 pin locations and all 51 I/O standards were compared with Terasic's
+official [DE1-SoC Rev. H System CD v6.0.0](https://download.terasic.com/downloads/cd-rom/de1-soc/DE1-SoC_v.6.0.0_HWrevH_SystemCD.zip),
 specifically `Demonstrations/FPGA/DE1_SOC_golden_top/DE1_SOC_golden_top.qsf`.
-See [Terasic's download index](https://download.terasic.com/downloads/cd-rom/de1-soc/)
-for other board revisions. The checked-in pin map is verified for F/G; compare
-the signals used by this project with your revision's manual before programming
-another revision.
+There are no differences for the signals used by this project. The device
+selection is also unchanged. The assignments also match the previously checked
+[Rev. F/G System CD v5.1.3](https://download.terasic.com/downloads/cd-rom/de1-soc/DE1-SoC_v.5.1.3_HWrevF.revG_SystemCD.zip).
+
+The user's board is marked H1; Terasic labels this published support package
+Rev. H. This records verification against that reference, not a physical test
+of an H1 board. See [Terasic's download index](https://download.terasic.com/downloads/cd-rom/de1-soc/)
+for the official packages.
+
+The Rev. H package's `UserManual/DE1-SoC_User_manual.pdf` (January 9, 2022),
+section 3.2, page 17, specifies **SW17.1 = 1, SW17.2 = 0** for FPGA JTAG
+programming. This selects the Cyclone V path; it is not the SW10 boot-mode switch.
 
 ## Timing constraints
 
@@ -72,7 +81,8 @@ as timing closure or board verification.
 | Device not installed | Install Cyclone V device support for your Quartus version |
 | Top-level entity missing | Open the QPF; the entity is `de1_soc_top` |
 | Source file missing | Keep `rtl` and `quartus` in their original relative locations |
-| No USB-Blaster detected | Check programming port, cable, power, driver, and OS permissions |
+| No USB-Blaster detected | Check J13, cable, power, driver, and OS permissions |
+| USB-Blaster detected but FPGA missing | On Rev. H/H1, check SW17.1 = 1 and SW17.2 = 0, then Auto Detect |
 | Terminal is blank | Use an external 3.3 V USB-UART adapter on GPIO_0[0], common ground, 115200 8N1; press reset |
 | Board has another revision | Compare its official pin table with `de1_soc_pins.qsf` |
 
