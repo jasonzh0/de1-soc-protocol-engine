@@ -163,7 +163,7 @@ void loop() {
     if (fpgaSerial.overflow()) ++uartTiming;
     // Send while FPGA TX is already streaming: this exercises true duplex.
     // FPGA captures 3C and toggles LEDR2; TX remains independently fixed at 55.
-    if (now - lastSendMs >= 250 && fpgaSerial.availableForWrite() > 0) {
+    if (now - lastSendMs >= 250) {
       fpgaSerial.write(UART_REPLY);
       ++uartTx;
       lastSendMs = now;
