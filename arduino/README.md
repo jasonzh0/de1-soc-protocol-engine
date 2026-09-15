@@ -4,6 +4,8 @@ Open [uno_protocol_tester.ino](uno_protocol_tester/uno_protocol_tester.ino).
 This sketch targets the **Uno R3 / ATmega328P at 16 MHz**, not Mega, R4, or ESP32.
 It tests one selected protocol at a time, with the FPGA as SPI/I2C master.
 
+For a step-by-step first test, follow the [UART duplex bench checklist](UART_DUPLEX.md).
+
 ## Electrical safety first
 
 **Uno R3 signals are 5 V; DE1-SoC GPIO is 3.3 V. Do not connect Uno outputs
@@ -117,6 +119,18 @@ arduino-cli core install arduino:avr@1.8.6
 arduino-cli lib install AltSoftSerial@1.4.0
 make test-arduino
 ```
+
+Run `make test-arduino-host` (also included in `make test`) with a C++17 host
+compiler for the sketch-loop regression. It executes the actual `.ino` with
+deterministic peripheral doubles: incoming `55` traffic, outgoing `3C` every
+250 ms, counter clear, idle, and `millis()` wrap. It deliberately models
+AltSoftSerial 1.4.0's inherited `availableForWrite() == 0`; this must not block
+transmission. The doubles do not model AVR interrupt timing or physical pins.
+
+If an older sketch reports increasing `rx` but **`tx=0` forever**, update and
+re-upload this sketch. The original TX guard incorrectly treated that zero
+as a full buffer. This Arduino-only fix needs no FPGA recompile if you already
+have the mode-100 duplex bitstream. Restart with SW9=1, send `u`, then SW9=0.
 
 The sketch is compile-checked for Uno R3 with AVR core 1.8.6 and AltSoftSerial
 1.4.0; it has not been run on physical hardware here. HDL tests exercise the matching firmware and serial

@@ -120,7 +120,9 @@ void reportStatus() {
   if (activeMode == 'u') {
     // Keep USB logging bounded and nonblocking so it cannot starve link RX.
     snprintf(line, sizeof(line), "U rx=%lu bad=%lu tx=%lu e=%lu %02X\n",
-             uartRx, uartBad, uartTx, uartTiming, static_cast<unsigned>(uartLast));
+             static_cast<unsigned long>(uartRx), static_cast<unsigned long>(uartBad),
+             static_cast<unsigned long>(uartTx), static_cast<unsigned long>(uartTiming),
+             static_cast<unsigned>(uartLast));
   } else {
     uint32_t rx, bad, requests;
     uint8_t last;
@@ -131,7 +133,9 @@ void reportStatus() {
       last = (activeMode == 's') ? spiLast : i2cLast;
     }
     snprintf(line, sizeof(line), "%c rx=%lu bad=%lu requests=%lu last=%02X\n",
-             (activeMode == 's') ? 'S' : 'I', rx, bad, requests, static_cast<unsigned>(last));
+             (activeMode == 's') ? 'S' : 'I', static_cast<unsigned long>(rx),
+             static_cast<unsigned long>(bad), static_cast<unsigned long>(requests),
+             static_cast<unsigned>(last));
   }
   const size_t length = strlen(line);
   if (Serial.availableForWrite() >= static_cast<int>(length))

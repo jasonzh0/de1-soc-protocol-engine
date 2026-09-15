@@ -1,4 +1,4 @@
-.PHONY: test test-fpga test-fpga-legacy test-tt test-protocols test-template test-arduino check-template synth quartus
+.PHONY: test test-fpga test-fpga-legacy test-tt test-protocols test-template test-arduino test-arduino-host check-template synth quartus
 
 IVERILOG ?= iverilog
 VVP ?= vvp
@@ -7,7 +7,13 @@ YOSYS ?= yosys
 PYTHON ?= python3
 ARDUINO_CLI ?= arduino-cli
 
-test: test-fpga test-fpga-legacy test-tt test-protocols
+test: test-fpga test-fpga-legacy test-tt test-protocols test-arduino-host
+
+# Host regression runs the real sketch loop with deterministic peripheral doubles.
+test-arduino-host:
+	mkdir -p build
+	$(CXX) -std=c++17 -Wall -Wextra -Werror -DARDUINO_AVR_UNO -DF_CPU=16000000UL -Itest/arduino_host test/arduino_host/test_uart.cpp -o build/test_arduino_uart
+	build/test_arduino_uart
 
 # Optional hardware-peer compile; install pinned AVR core / AltSoftSerial first.
 test-arduino:
