@@ -107,7 +107,7 @@ words. Assert reset to invalidate all previous instructions before a clean load.
 
 ## How to test
 
-Run `make test` from the repository root. The tests check the original FPGA
+Run `make test` from the repository root. The tests check the FPGA key-down
 demo and upload UART firmware through only the Tiny Tapeout pins, decoding
 three 0x55 frames followed by reprogramming and decoding two 0xAA frames.
 They also check malformed commands, address 31 and wraparound, protected

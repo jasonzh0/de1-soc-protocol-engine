@@ -1,8 +1,20 @@
 # DE1-SoC Protocol Engine
 
 A small programmable Verilog pin engine shared by a ready-to-open Quartus
-Prime project and a Tiny Tapeout wrapper. The DE1-SoC demo repeatedly sends
-ASCII `U` (`0x55`) over GPIO UART at approximately 115200 baud, 8N1.
+Prime project and a Tiny Tapeout wrapper. The DE1-SoC demo sends one ASCII
+character per key-down at approximately 115200 baud, 8N1, and displays `C H U d`
+on the rightmost four seven-segment displays.
+
+| Key | UART character |
+| --- | --- |
+| KEY3 | C |
+| KEY2 | H |
+| KEY1 | U |
+| KEY0 | D |
+
+Holding or releasing a key sends nothing extra. Each input is debounced for
+10 ms. Simultaneous presses are queued in KEY3 → KEY2 → KEY1 → KEY0 order.
+Reset has moved to **SW9: 1 = reset, 0 = run**.
 
 ## Tiny Tapeout interface
 
@@ -24,34 +36,36 @@ execution. See [host commands and ASIC integration](docs/info.md) and
    Open **Tools → Programmer**, select the board's USB-Blaster in Hardware
    Setup, and use JTAG mode. Add `quartus/output_files/de1_soc_demo.sof`, select
    Program/Configure for the FPGA, and click Start.
-6. Press and release **KEY[0]**. LEDR[0] indicates the program is loaded;
-   LEDR[1] indicates an instruction fault; **LEDR[2] blinks with UART activity**.
+6. Set **SW9 to 1, then back to 0** to reset and enable the demo. Press a key
+   to send its character. HEX3–HEX0 display `C H U d`; HEX5–HEX4 are blank.
 
-The project already selects `5CSEMA5F31C6`, the two RTL files, the top-level
-module, the 50 MHz clock constraint, and all 51 top-level pin assignments.
+The project already selects `5CSEMA5F31C6`, its four RTL source files, the
+top-level module, the 50 MHz clock constraint, and all 103 top-level pin assignments.
 No New Project Wizard or manual source-file setup is needed.
 
-The target board is **DE1-SoC revision H1**. All 51 pin locations and I/O
+The target board is **DE1-SoC revision H1**. All 103 pin locations and I/O
 standards match **Terasic's Rev. H System CD v6.0.0**; they also match the earlier
-F/G reference. Terasic labels the checked support package Rev. H, not H1.
+F/G reference for the original clock/key/LED/GPIO signals. Terasic labels the
+checked support package Rev. H, not H1.
 See [the Quartus guide](docs/quartus.md) for wiring, sources, and troubleshooting.
 
 ## Check execution without a receiver
 
-After programming and pressing KEY[0], expect LEDR[0] on, LEDR[1] off, and
-**LEDR[2] blinking approximately once per second** (half a second on/off).
-This indicator counts the engine's actual TX transitions, so blinking confirms
-the loaded program is generating output. It freezes if transitions stop and
-clears on reset or fault. It does not check the physical connector or decode
-UART data. Existing FPGA configurations need to be rebuilt/reprogrammed to get
-this new indicator.
+After resetting with SW9 and returning it to 0, expect LEDR[0] on and LEDR[1]
+off. **LEDR[2] changes state once per completed byte**: press a key and watch it
+toggle; hold the key and it stays steady. LEDR[9:6] indicate the last accepted
+key, in KEY3..KEY0 order. LEDR[3] is busy during the brief transmission.
+The displays always show `C H U d`; the lowercase-style d is the available
+seven-segment form of D. LEDs do not validate the external connector/wiring.
+Recompile and reprogram the FPGA to get this updated behavior.
 
 ## See the UART output
 
 Connect **GPIO_0[0]** to the RX input of a **3.3 V USB-UART adapter**, and connect
 grounds. Find the physical header position in your board's manual; the signal
 index is not a header pin number. Open a terminal at **115200, 8N1, no flow
-control**. Expect repeated `UUUU...`.
+control**. Press KEY3, KEY2, KEY1, KEY0 to receive `CHUD`, with no newline or
+carriage return added. Idle, held keys, and releases produce no extra bytes.
 
 The onboard USB-Blaster is the programming connection. The serial demo uses
 the separate adapter. Do not connect 5 V or RS-232 signal levels to FPGA GPIO.
@@ -64,12 +78,14 @@ the separate adapter. Do not connect 5 V or RS-232 signal levels to FPGA GPIO.
 | `src/program_loader.v` | Host commands and program staging, independent of pad names |
 | `src/tt_um_jasonzh0_protocol_engine.v` | Tiny Tapeout pin adapter and status outputs |
 | `info.yaml`, `src/config.json` | Tiny Tapeout source metadata and CMOS5L flow settings |
-| `rtl/de1_soc_top.v` | Board wrapper, reset synchronizer, fixed UART demo loader |
+| `rtl/de1_soc_top.v` | Board reset, key queue/mapping, GPIO buffers, LEDs and displays |
+| `rtl/button_events.v` | Synchronized/debounced key-down events |
+| `rtl/uart_program_sender.v` | One-byte UART program loader using the shared core |
 | `quartus/de1_soc_demo.qpf` | Open this file in Quartus |
 | `quartus/de1_soc_demo.qsf` | FPGA device, source files, and build settings |
 | `quartus/de1_soc_pins.qsf` | Board pin locations and 3.3 V I/O standards |
 | `quartus/de1_soc_demo.sdc` | Clock and demo-specific timing exceptions |
-| `test/tb_uart.v` | UART receiver simulation checking three frames |
+| `test/tb_uart.v` | Key-down UART, bounce/hold/release, queue, LED and display checks |
 | `test/tb_tiny_tapeout.v` | Program loading, reprogramming, errors and UART through TT ports |
 
 ## Run simulation
@@ -109,14 +125,15 @@ every reachable instruction before running. Reset invalidates every word;
 the memory data bits themselves are not reset. Invalid opcodes or execution of
 unwritten words latch `fault` and release output enables.
 
-The demo alternates SET and WAIT 432 instructions, producing 434-clock bit
-intervals at 50 MHz (about 115207 baud). JMP adds one clock to the stop bit;
-initial output-enable startup also extends the first start bit by one clock.
+The FPGA UART adapter builds a program with SET and WAIT 432 instructions,
+producing 434-clock bit intervals at 50 MHz (about 115207 baud). Each byte has
+an idle-high setup, start bit, eight data bits least-significant first, and stop
+bit. The core then loops idle-high until the adapter ends the execution window.
 
 ## Status and next steps
 
-The core currently supports output timing only. The DE1 board loads a fixed
-demo; the Tiny Tapeout wrapper supports external program loading and replacement.
+The core currently supports output timing only. The DE1 adapter loads a UART
+program per key-down; the Tiny Tapeout wrapper supports external program loading and replacement.
 Input sampling, conditional branching, shifting, and FIFOs are future work.
 
 Both interface simulations and generic synthesis pass. Full Quartus compilation, timing closure, and
