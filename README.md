@@ -5,8 +5,9 @@ UART, SPI and I2C behavior comes from replaceable instructions—not three fixed
 protocol peripherals. The Python library and UART program uploader are deferred.
 
 The engine has **64×16-bit writable instructions**, eight I/O pins, synchronized
-inputs, byte shifts, counted loops, pin waits/branches, a one-level call/return,
-and a captured-byte result register. See [ISA](docs/isa.md).
+inputs, byte shifts, counted loops, pin waits/branches, one-level calls per context,
+and a captured-byte result register. A generic second instruction context enables
+full-duplex UART without fixed UART hardware. See [ISA](docs/isa.md).
 
 ## Run on DE1-SoC H1
 
@@ -16,30 +17,41 @@ The existing Quartus project now boots the protocol engine, **not the CHUD demo*
    support. The top-level entity should be **de1_protocol_top**.
 2. Compile, then program **quartus/output_files/de1_soc_demo.sof** using
    USB-Blaster II/JTAG. On H/H1, use SW17.1=1 and SW17.2=0 for FPGA JTAG.
-3. Raise **SW9** to reset, set **SW1:0** from the table, then lower SW9 to boot.
+3. Raise **SW9** to reset, set **SW2:0** from the table, then lower SW9 to boot.
    Changing mode switches without resetting does not change the running program.
 
-| SW1:0 | Mode | GPIO_0 signals | Default behavior |
+| SW2:0 | Mode | GPIO_0 signals | Default behavior |
 | --- | --- | --- | --- |
-| 00 | UART TX | [0]=TX | Repeats byte 0x55 (`U`), nominal 115200 baud, 8N1 |
-| 01 | UART RX | [0]=RX | Receives one byte at 115200, 8N1 |
-| 10 | SPI mode 0 | [0]=SCK, [1]=MOSI, [2]=MISO, [3]=CS_n | Exchanges 0xA5 at 100 kHz, MSB first |
-| 11 | I2C write | [0]=SDA, [1]=SCL | Writes 0xA5 to 7-bit address 0x50, <=100 kHz; checks ACKs and honors stretching |
+| 000 | UART full duplex | [0]=TX, [1]=RX | Repeats 0x55 while receiving; nominal 115200 baud, 8N1 |
+| 100 | Uno R3 duplex test | [0]=TX, [1]=RX | Same behavior at 31250 baud for the Arduino tester |
+| 001 | Standalone UART RX | [0]=RX | Receives one byte at 115200, 8N1 |
+| 010 | SPI mode 0 | [0]=SCK, [1]=MOSI, [2]=MISO, [3]=CS_n | Exchanges 0xA5 at 100 kHz, MSB first |
+| 011 | I2C write | [0]=SDA, [1]=SCL | Writes 0xA5 to address 0x50; checks ACKs/stretching |
+| 111 | I2C read | [0]=SDA, [1]=SCL | Reads one byte from address 0x50, sends NACK then STOP |
 
-SPI/I2C and UART RX are one-shot examples: reset to repeat. I2C needs external
+SPI/I2C and standalone UART RX are one-shot examples: reset to repeat.
+Duplex UART receives repeatedly without reset; its latest-byte register can
+be overwritten, so read promptly (no RX FIFO). SW2 is ignored in SPI/standalone RX.
+I2C needs external
 pull-ups and a responding device; a NACK faults and releases the bus. No peer,
 missing pull-ups or a stuck line can prevent success. Use compatible 3.3 V
 signals and common ground; no 5 V or RS-232 levels on FPGA GPIO.
 
 **Status:** LEDR0=engine running, LEDR1=fault, LEDR2=capture toggle,
-LEDR3=waiting for a pin, LEDR5:4=latched mode, LEDR9=heartbeat (~0.67 s per toggle).
-HEX5 shows mode 0–3; HEX1:0 show the last received byte in hexadecimal.
+LEDR3=at least one context waiting for a pin, LEDR6:4=latched mode,
+LEDR9=heartbeat (~0.67 s per toggle).
+HEX5 shows mode 0,1,2,3,4 or 7; HEX1:0 show the last received byte in hexadecimal.
 The heartbeat proves clocked execution, not external communication.
 
-For UART TX, connect GPIO_0[0] to a 3.3 V USB-UART adapter's RX. The onboard
+For full UART, connect GPIO_0[0] to a 3.3 V USB-UART adapter's RX and its TX to
+GPIO_0[1]. The onboard
 USB-Blaster programs the FPGA; it is not the protocol UART connection.
 For a simple SPI loopback test, jumper GPIO_0[1] to GPIO_0[2] before resetting
-into mode 10: the expected captured/displayed byte is A5.
+into mode 010: the expected captured/displayed byte is A5.
+
+**Using an Arduino Uno R3?** The [test sketch and safe wiring guide](arduino/README.md)
+cover all three protocols. The Uno requires **5 V↔3.3 V level translation**.
+Its UART test uses mode 100 at 31250 baud, while USB Serial Monitor stays 115200.
 
 See [Quartus setup and wiring](docs/quartus.md) and
 [firmware configuration](firmware/README.md). The project name is retained so
@@ -76,6 +88,7 @@ changing hardware. See the firmware guide for exact configuration locations.
 | rtl/de1_protocol_top.v | H1 reset, mode, GPIO, LEDs and displays |
 | rtl/firmware_bootloader.v | FPGA-only firmware ROM and load sequence |
 | firmware/ | UART TX/RX, SPI and I2C programs |
+| arduino/uno_protocol_tester/ | Uno R3 UART, SPI-peripheral and I2C-device test sketch |
 | quartus/de1_soc_demo.qpf | Active Quartus project |
 | info.yaml, src/config.json | Tiny Tapeout submission metadata/config |
 
@@ -100,6 +113,6 @@ Local RTL regressions and generic synthesis are verification steps, **not ASIC
 signoff**. Still required: actual Quartus compilation/board tests, CMOS5L mapped
 area/6x4 fit, physical design, timing closure, DRC/LVS and gate-level protocol
 verification. No tapeout readiness or support for every protocol mode is claimed.
-FIFO streaming, I2C reads/arbitration/recovery and faster protocols remain future work.
+FIFO streaming, I2C repeated-START/arbitration/recovery and faster protocols remain future work.
 
 License: Apache-2.0; see [LICENSE](LICENSE).

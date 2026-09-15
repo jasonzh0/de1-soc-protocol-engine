@@ -2,7 +2,8 @@
 `default_nettype none
 
 // DE1-SoC H1 adapter for the actual shared protocol engine.
-// Set SW1:0 while SW9=1, then lower SW9 to load/run that firmware.
+// Set SW1:0 while SW9=1; SW2 selects I2C read or slow duplex UART.
+// Lower SW9 to load/run. SW2 is ignored for standalone RX and SPI.
 module de1_protocol_top (
     input wire CLOCK_50,
     input wire [3:0] KEY,
@@ -13,8 +14,8 @@ module de1_protocol_top (
 );
     reg [1:0] reset_sync;
     wire rst_n = reset_sync[1];
-    reg [1:0] mode_meta, mode_sync;
-    wire [1:0] selected_mode;
+    reg [2:0] mode_meta, mode_sync;
+    wire [2:0] selected_mode;
     wire run, prog_we, fault, sample_toggle, stalled;
     wire [5:0] prog_addr;
     wire [15:0] prog_data;
@@ -32,7 +33,7 @@ module de1_protocol_top (
             mode_sync <= 0;
             heartbeat <= 0;
         end else begin
-            mode_meta <= SW[1:0];
+            mode_meta <= SW[2:0];
             mode_sync <= mode_meta;
             if (run && !fault) heartbeat <= heartbeat + 1'b1;
             else heartbeat <= 0;
@@ -57,7 +58,7 @@ module de1_protocol_top (
     assign GPIO_0[35:8] = {28{1'bz}};
     // LED9 heartbeat toggles every ~0.67 s, including firmware idle loops.
     // It proves clocks/run, not successful external communication.
-    assign LEDR = {heartbeat[25], 3'b0, selected_mode, stalled,
+    assign LEDR = {heartbeat[25], 2'b0, selected_mode, stalled,
                    sample_toggle, fault, (run && !fault)};
 
     function [6:0] hex_digit(input [3:0] value);
@@ -79,7 +80,7 @@ module de1_protocol_top (
     assign HEX2 = 7'h7f;
     assign HEX3 = 7'h7f;
     assign HEX4 = 7'h7f;
-    assign HEX5 = hex_digit({2'b0, selected_mode});
-    wire _unused = &{KEY, SW[8:2], 1'b0};
+    assign HEX5 = hex_digit({1'b0, selected_mode});
+    wire _unused = &{KEY, SW[8:3], 1'b0};
 endmodule
 `default_nettype wire

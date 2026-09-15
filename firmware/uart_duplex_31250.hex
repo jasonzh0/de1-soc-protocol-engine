@@ -1,0 +1,48 @@
+// 50 MHz physical clock, two contexts at 25 MHz each, 800 ticks per UART bit.
+// TX=pin0, RX=pin1, 31250 baud (Uno R3 AltSoftSerial test profile), 8N1.
+// Context 0 continuously transmits 55. Context 1 continuously captures RX.
+// Shared pin direction is configured once before starting the second context.
+1001 // 00 SET TX idle high
+3001 // 01 DIR TX output, RX input
+f320 // 02 START_CTX 32; next clock runs RX, then strict round-robin
+5055 // 03 LOAD_TX 55
+8008 // 04 COUNT 8
+c000 // 05 TX start low
+231e // 06 WAIT 798 context ticks: start + WAIT = 800
+6000 // 07 OUT TX LSB first
+231d // 08 WAIT 797: OUT + WAIT + LOOP = 800 ticks
+9007 // 09 LOOP 7
+c008 // 10 TX stop high
+231e // 11 WAIT 798
+4003 // 12 JMP 3 (small extra idle gap)
+0000 // 13..31 reserved fault words; never reached by either context
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+a009 // 32 WAIT_PIN RX high (idle / stop)
+f000 // 33 CLEAR_RX
+a001 // 34 WAIT_PIN RX low (start)
+24ac // 35 WAIT 1196 ticks: first sample near center of data bit 0
+8008 // 36 COUNT 8
+7001 // 37 IN RX LSB first
+231d // 38 WAIT 797 ticks
+9025 // 39 LOOP 37
+b2a9 // 40 JMP_PIN RX high -> 42, stop bit valid
+0000 // 41 Framing fault stops BOTH contexts and releases pins
+e000 // 42 CAPTURE; host must read before the next byte overwrites it
+4020 // 43 JMP 32, ready for another frame without resetting

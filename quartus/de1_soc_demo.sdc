@@ -7,7 +7,7 @@ set_false_path -from [get_ports {SW[9]}] -to [get_registers {*reset_sync*}]
 
 # Mode switches and protocol inputs enter two-stage synchronizers.
 # Only the first-stage input paths are false-pathed; inter-stage paths are timed.
-set_false_path -from [get_ports {SW[0] SW[1]}] -to [get_registers {*mode_meta*}]
+set_false_path -from [get_ports {SW[0] SW[1] SW[2]}] -to [get_registers {*mode_meta*}]
 set_false_path -from [get_ports {GPIO_0[*]}] -to [get_registers {*pin_meta*}]
 
 # Human-visible outputs have no external timing requirement.

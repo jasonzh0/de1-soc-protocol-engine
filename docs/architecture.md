@@ -24,7 +24,7 @@ Tiny Tapeout pins                                    v
 
 | Module / files | Owns | Must not own |
 | --- | --- | --- |
-| `src/protocol_engine.v` | ISA, memory, pin synchronization, shifts/loops, result capture, timing/faults | Board pins, host command encoding, vendor primitives |
+| `src/protocol_engine.v` | ISA, shared memory, optional two-context scheduling, private context state, pins/capture/timing/faults | Board pins, protocol-specific logic, host encoding, vendor primitives |
 | `src/program_loader.v` | Address/data staging, host commands, run control, loader errors | Pad names, clocks derived from host strobes, instruction execution |
 | `src/tt_um_jasonzh0_protocol_engine.v` | TT ports, strobe detection, status/result selection, output-enable gating | ISA logic, vendor I/O buffers |
 | `firmware/` | Protocol-specific instruction sequences and basic configurations | Fixed-function protocol hardware or host transport |
@@ -57,9 +57,9 @@ those commands, or drives the core's word-write interface directly.
   latches fault and releases the output enables.
 - `pin_out` is a value and `pin_oe` is a drive mask. The caller implements the
   physical tri-state. The core contains no `inout` or device-specific cells.
-- WAIT N takes N+1 clocks; SET/DIR/JMP take one. Changes to fetch latency or
+- In single-context mode WAIT N takes N+1 clocks; SET/DIR/JMP take one. Changes to fetch latency or
   instruction timing are ISA changes and require updating firmware/tests.
-- Full opcode, sampling, loop/call, capture and stall contracts: [ISA v1](isa.md).
+- Full opcode, scheduling, sampling, ownership, capture and stall contracts: [ISA v1.1](isa.md).
   Pin inputs cross two flops; no vendor-specific I/O logic is inside the core.
   HALT preserves the last captured byte/toggle. CAPTURE overwrites one result
   register without backpressure; this first version has no TX/RX FIFO.
@@ -76,8 +76,12 @@ those commands, or drives the core's word-write interface directly.
 | Larger instruction memory | Coordinated address width, loader, firmware, tests, and physical-flow change |
 
 UART, SPI and I2C are firmware configurations of one engine, not three
-peripherals. The first examples are intentionally bounded: UART TX / one-byte
-RX, one-byte SPI mode 0, and a one-byte single-master I2C write. FIFO streaming,
+peripherals. A generic START_CTX instruction enables two independent contexts
+on one decoder/datapath; it is not a UART enable bit or a second UART block.
+Round-robin timing is fixed even while either context waits. All pin ownership
+and single-result publication rules are explicit in the ISA contract.
+The examples support full-duplex UART, one-byte SPI mode 0, and one-byte
+single-master I2C read/write. FIFO streaming,
 UART program upload and a Python compiler/library are deferred, not hidden
 dependencies. Keep a future uploader separate from protocol-pin execution.
 
@@ -88,8 +92,8 @@ a separate module, then document the latency contract explicitly.
 
 ## Verification and source lists
 
-`make test-fpga` exercises the actual Quartus top: all four boot modes, UART
-TX/RX, SPI loopback, I2C ACK/NACK, received-byte displays, fault recovery and
+`make test-fpga` exercises the actual Quartus top: six configurations, simultaneous UART
+TX/RX, SPI loopback, I2C read/write, received-byte displays, fault recovery and
 mode latching until reset. `make test-fpga-legacy` checks key mappings, bounce rejection, one byte per press,
 held/released keys, simultaneous presses, LED status and display glyphs. Only
 debounce duration is reduced in simulation; UART timing is real. `make test-tt` loads and runs
@@ -97,7 +101,8 @@ programs entirely through the Tiny Tapeout ports, including rewriting UART
 firmware, command errors, high addresses/wrap, invalid instructions, reset,
 deselection, and drive masks. Tests do not reach into private registers.
 `make test-protocols` loads the checked-in firmware through TT pins, driving
-independent serial peers including I2C NACK/stretch and UART framing errors.
+independent serial peers including I2C NACK/stretch, asynchronous overlapping
+UART traffic, exact TX intervals, independent context return slots and faults.
 `make test-template` is the official-style Cocotb RTL/GL-compatible harness.
 `make check-template` checks local metadata/port/source/config consistency.
 `make synth` checks generic synthesizability and structural consistency; it does
@@ -113,7 +118,9 @@ GitHub CI is paused by user request. Keep it paused until explicitly requested.
 ## Active FPGA boot contract
 
 The QSF selects `de1_protocol_top`, which connects the shared engine to the
-first eight GPIO pins. SW9 resets; SW1:0 selects TX/RX/SPI/I2C. Four settling
+first eight GPIO pins. SW9 resets; SW1:0 selects duplex UART/RX/SPI/I2C.
+SW2 selects I2C read/write or duplex UART 31250/115200 baud; it is ignored in
+standalone RX and SPI. Four settling
 clocks follow reset release before mode capture; selected firmware is loaded
 one instruction per clock. The final write occurs with run low; execution
 starts on the following edge. Mode stays latched until reset.
@@ -121,7 +128,10 @@ starts on the following edge. Mode stays latched until reset.
 The boot ROMs and their `$readmemh` initialization are FPGA-only, in `rtl/`.
 Do not add them to `info.yaml`. ASIC program memory is still externally loaded
 after reset. ROM file paths are relative to the Quartus project directory.
-HEX5 shows mode; HEX1:0 show the captured result. KEY inputs are unused.
+HEX5 shows mode (0,1,2,3,4 for Uno UART, or 7 for I2C read); HEX1:0 show the result.
+LEDR6 indicates alternate UART/I2C firmware selection. KEY inputs are unused.
+The Uno tester is in `arduino/`, outside both FPGA and ASIC execution RTL.
+Its conservative baud profile is firmware, not special UART logic in the core.
 GPIO output timing has a prototype 20 ns register-to-pin path budget; it is
 not a complete peer/board timing model. See the Quartus guide before changing rates.
 

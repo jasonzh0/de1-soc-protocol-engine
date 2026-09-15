@@ -2,7 +2,7 @@ project:
   title: "Programmable protocol engine"
   author: "Jason Zhang"
   discord: ""
-  description: "64-word programmable I/O engine with UART, SPI and I2C firmware"
+  description: "64-word two-context programmable I/O engine with bidirectional serial firmware"
   language: "Verilog"
   clock_hz: 50000000
   # Competition allocation; physical fit/timing still need validation.

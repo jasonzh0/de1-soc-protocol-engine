@@ -16,6 +16,8 @@
 - GitHub CI is intentionally paused. Do not enable it without the user's request.
 - Keep protocol behavior in firmware for the shared engine, not separate fixed
   UART/SPI/I2C hardware. Document ISA changes in `docs/isa.md`.
+- Context scheduling is generic, fixed round-robin after START_CTX. Preserve
+  single-context timing; never add UART-specific scheduling or hidden pin ownership.
 - Preserve template alignment (`docs/template.md`). The Python compiler/library
   and UART uploading transport are deferred; template Cocotb tests are separate.
 - Distinguish simulation/generic synthesis from actual Quartus builds and

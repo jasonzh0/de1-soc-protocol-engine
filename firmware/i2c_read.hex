@@ -1,0 +1,50 @@
+// 50 MHz, <=100 kHz plus stretch time. SDA=0, SCL=1, external pull-ups.
+// Single-master read of one byte from 7-bit address 50.
+// Check address ACK, receive MSB first, send final NACK, STOP, then CAPTURE.
+1000 // 00 SET output values low
+3000 // 01 DIR release bus
+a009 // 02 WAIT_PIN SCL high
+a008 // 03 WAIT_PIN SDA high
+20f9 // 04 WAIT 249
+d008 // 05 DIR_PIN SDA low: START
+20f9 // 06 WAIT 249
+d009 // 07 DIR_PIN SCL low
+50a1 // 08 LOAD_TX (address 50 << 1) | read=1
+8008 // 09 COUNT 8 address bits
+6018 // 10 OUT SDA MSB first, open drain
+20f9 // 11 WAIT 249
+d001 // 12 DIR_PIN SCL release
+a009 // 13 WAIT_PIN SCL high
+20f9 // 14 WAIT 249
+d009 // 15 DIR_PIN SCL low
+900a // 16 LOOP 10
+d000 // 17 DIR_PIN SDA release for address ACK
+20f9 // 18 WAIT 249
+d001 // 19 DIR_PIN SCL release
+a009 // 20 WAIT_PIN SCL high
+20f9 // 21 WAIT 249
+b2e8 // 22 JMP_PIN SDA high -> 46: address NACK faults
+d009 // 23 DIR_PIN SCL low
+f000 // 24 CLEAR_RX
+8008 // 25 COUNT 8 receive bits (SDA stays released)
+20f9 // 26 WAIT 249
+d001 // 27 DIR_PIN SCL release
+a009 // 28 WAIT_PIN SCL high
+20f9 // 29 WAIT 249
+7010 // 30 IN SDA MSB first
+d009 // 31 DIR_PIN SCL low
+901a // 32 LOOP 26
+20f9 // 33 WAIT 249; SDA released for final NACK
+d001 // 34 DIR_PIN SCL release: ninth clock
+a009 // 35 WAIT_PIN SCL high
+20f9 // 36 WAIT 249
+d009 // 37 DIR_PIN SCL low
+d008 // 38 DIR_PIN SDA low before STOP
+20f9 // 39 WAIT 249
+d001 // 40 DIR_PIN SCL release
+a009 // 41 WAIT_PIN SCL high
+20f9 // 42 WAIT 249
+d000 // 43 DIR_PIN SDA release: STOP
+e000 // 44 CAPTURE received byte
+402d // 45 JMP 45 idle
+0000 // 46 Fault handler: release all protocol pins

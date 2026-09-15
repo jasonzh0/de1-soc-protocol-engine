@@ -13,17 +13,21 @@ Target device: **5CSEMA5F31C6**. Native Quartus is not available on this Mac.
    board's USB-Blaster II port J13, power up, and open **Tools → Programmer**.
 5. Choose USB-Blaster/JTAG, add **quartus/output_files/de1_soc_demo.sof**,
    enable Program/Configure for the FPGA, then Start.
-6. Raise SW9, set SW1:0, then lower SW9. The firmware is loaded automatically.
+6. Raise SW9, set SW2:0, then lower SW9. The firmware is loaded automatically.
 
-| SW1 | SW0 | Mode | Wiring / behavior |
-| --- | --- | --- | --- |
-| 0 | 0 | UART TX | GPIO_0[0] → receiver RX; repeats 0x55 (`U`), 115200 8N1 |
-| 0 | 1 | UART RX | Sender TX → GPIO_0[0]; receives one byte, checks stop bit |
-| 1 | 0 | SPI mode 0 | GPIO_0[0]=SCK, [1]=MOSI, [2]=MISO, [3]=active-low CS; 100 kHz |
-| 1 | 1 | I2C write | GPIO_0[0]=SDA, [1]=SCL; address 0x50, payload 0xA5, <=100 kHz |
+| SW2:0 | Mode | Wiring / behavior |
+| --- | --- | --- |
+| 000 | Full-duplex UART | GPIO_0[0]=TX, [1]=RX; transmit 55 and receive simultaneously, 115200 8N1 |
+| 100 | Uno R3 UART test | Same pins and behavior at 31250 baud; USB Serial Monitor stays 115200 |
+| 001 | Standalone UART RX | Sender TX → GPIO_0[0]; receives one byte at 115200, checks stop bit |
+| 010 | SPI mode 0 | GPIO_0[0]=SCK, [1]=MOSI, [2]=MISO, [3]=active-low CS; 100 kHz |
+| 011 | I2C write | GPIO_0[0]=SDA, [1]=SCL; address 0x50, payload 0xA5, <=100 kHz |
+| 111 | I2C read | Same pins/address; receive one byte, send final NACK, STOP, capture result |
 
 Mode switches are latched at boot. Change them while SW9 is high; reset again
-to switch protocols or repeat a one-shot RX/SPI/I2C transaction. KEY buttons are
+to switch protocols or repeat a one-shot standalone RX/SPI/I2C transaction.
+Duplex UART RX repeats without reset. SW2 is ignored in standalone RX and SPI.
+KEY buttons are
 unused. GPIO_0[7:0] connect to the engine; unused outputs stay released, and
 GPIO_0[35:8] are always tri-stated.
 
@@ -31,6 +35,8 @@ Use **3.3 V-compatible** logic, common ground, and no RS-232/5 V signals.
 I2C needs external pull-ups on both lines to the compatible board supply.
 Check wiring before switching modes: the same header positions change roles.
 The USB-Blaster is not a UART upload or protocol-data connection.
+For your **Uno R3**, use the [test sketch and level-shifted wiring guide](../arduino/README.md).
+Select UART mode 100, not 000, for that tester.
 
 ## Status without a receiver
 
@@ -38,13 +44,13 @@ The USB-Blaster is not a UART upload or protocol-data connection.
 | --- | --- |
 | LEDR0 | Engine is running without a fault (including firmware idle loops) |
 | LEDR1 | Fault; reset to recover |
-| LEDR2 | Toggles once per captured result; one capture in RX/SPI/I2C examples |
-| LEDR3 | WAIT_PIN condition not yet met |
-| LEDR5:4 | Latched SW1:0 mode |
+| LEDR2 | Toggles once per captured result; repeats for each duplex UART received byte |
+| LEDR3 | At least one context is waiting for a pin; the sibling may still transmit |
+| LEDR6:4 | Latched mode: 0/1/2/3/4/7 |
 | LEDR9 | Heartbeat, toggles every ~0.67 s while running without fault |
-| HEX5 | Mode 0, 1, 2 or 3 |
+| HEX5 | Mode 0, 1, 2, 3, 4 or 7 |
 | HEX1:0 | Last captured byte in hexadecimal |
-| HEX4:2, LEDR8:6 | Blank/off |
+| HEX4:2, LEDR8:7 | Blank/off |
 
 Heartbeat indicates clocked execution, not successful protocol communication.
 UART RX normally waits with LEDR3 on until a sender supplies a start bit.
@@ -52,7 +58,7 @@ A disconnected I2C target NACKs if pull-ups are present; LEDR1 then turns on.
 A stuck-low bus waits indefinitely until SW9 resets it.
 
 For a no-external-device data test, jumper **GPIO_0[1] to GPIO_0[2]** for SPI
-MOSI→MISO loopback. Reset into mode 10. Expect HEX1:0=`A5`, LEDR2 on and
+MOSI→MISO loopback. Reset into mode 010. Expect HEX1:0=`A5`, LEDR2 on and
 LEDR1 off. The pin indices are signal indices, not physical header positions.
 
 ## Change firmware
@@ -64,7 +70,9 @@ before asserting RUN. The ASIC does not contain these boot ROMs.
 
 See [firmware configuration](../firmware/README.md). The boot adapter's ROM
 lengths must be updated if a program gains/loses instructions. All supplied
-firmware assumes a 50 MHz clock. The loader waits four clocks for synchronized
+firmware assumes a 50 MHz physical clock. Duplex firmware uses two contexts,
+each scheduled at 25 MHz; the Uno profile changes instruction counts, not clocks.
+The loader waits four clocks for synchronized
 mode inputs and loads a word per clock; it is not an asynchronous UART receiver.
 
 SOF programming is volatile; reload after power loss. This project does not
@@ -123,10 +131,10 @@ directory so the firmware ROM paths match Quartus.
 | Firmware file missing | Keep firmware/ beside quartus/; compile from the project directory |
 | No USB-Blaster | J13, cable, power, driver and OS permissions |
 | FPGA not found | SW17.1=1, SW17.2=0, JTAG Auto Detect |
-| UART terminal blank | Mode 00, GPIO_0[0] to adapter RX, common ground, 115200 8N1 |
-| RX waiting forever | Mode 01 needs an external sender and idle-high RX |
+| UART terminal blank | Mode 000 at 115200; Uno tester uses mode 100 at 31250 and separate USB monitor at 115200 |
+| RX waiting forever | Duplex RX is GPIO_0[1]; standalone RX is GPIO_0[0]; use the matching baud |
 | I2C fault | Correct address/device, power, pull-ups; NACK intentionally faults |
-| Mode did not change | Raise SW9 before changing SW1:0, then lower it |
+| Mode did not change | Raise SW9 before changing SW2:0, then lower it |
 | Still showing CHUD | Recompile and program the new SOF, not an older bitstream |
 
 The old key-demo RTL/test remain for regression only; the active QSF excludes them.

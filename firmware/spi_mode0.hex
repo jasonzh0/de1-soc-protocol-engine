@@ -9,8 +9,8 @@ c003 // 05 SET_PIN CS low
 6011 // 06 OUT MOSI MSB first
 20f6 // 07 WAIT 246 (low half includes OUT, LOOP and SET_PIN)
 c008 // 08 SET_PIN SCK high
-20f7 // 09 WAIT 247
-7012 // 10 IN MISO MSB first (stable before falling edge)
+7012 // 09 IN MISO MSB first, near the sampling/leading edge
+20f7 // 10 WAIT 247 (IN + WAIT + SET_PIN gives 250-clock high half)
 c000 // 11 SET_PIN SCK low
 9006 // 12 LOOP 6
 e000 // 13 CAPTURE RX byte

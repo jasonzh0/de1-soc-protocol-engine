@@ -3,7 +3,8 @@
 ## How it works
 
 A 64-word, 16-bit programmable engine reads and drives eight pins. Timing,
-shifts, loops, branches and one-level calls implement protocols in firmware.
+shifts, loops, branches, one-level calls and optional two-context scheduling
+implement protocols in firmware, including simultaneous UART TX/RX.
 Program data comes from dedicated Tiny Tapeout inputs; all eight bidirectional
 pins remain available for protocol signals. The DE1-SoC demo shares the same
 `src/protocol_engine.v`. The active FPGA wrapper boots selectable firmware;
@@ -29,7 +30,7 @@ host clock-domain crossing circuit. Do not treat `host_strobe` as a clock.
 | `uo_out[3]` | Four data nibbles staged, ready for WRITE |
 | `uo_out[4]` | Toggles once per command strobe, including rejected commands |
 | `uo_out[5]` | Capture toggle: changes on each published byte |
-| `uo_out[6]` | Waiting for a pin condition |
+| `uo_out[6]` | At least one context is waiting for a pin (registered per context) |
 | `uo_out[7]` | Zero in status mode |
 | `uio_out[7:0]` | Engine output values |
 | `uio_oe[7:0]` | Per-pin drive enable: 1 drives, 0 releases |
@@ -74,6 +75,9 @@ loader error, a read-selection error does not inhibit RUN. HALT also restores
 status mode; the last captured result and capture toggle survive HALT and
 clocked deselection, but reset clears them. CAPTURE is not buffered: a later
 capture overwrites the result, and two captures can cancel the toggle indication.
+In duplex UART mode, RX publishes every byte while TX continues independently.
+Read results promptly; this register is not a receive FIFO. A fault from either
+context halts both and disables all outputs. HALT restores single-context mode.
 
 ### Minimal program example
 
@@ -127,8 +131,9 @@ boot/mode adapter, legacy key-down demo and upload UART firmware through only th
 three 0x55 frames followed by reprogramming and decoding two 0xAA frames.
 They also check malformed commands, address 63 and wraparound, protected
 running writes, output directions, faults, reset and deselection.
-`make test-protocols` checks the checked-in UART TX/RX, SPI mode-0 and I2C-write
-firmware against external peers, including NACK, stretching and framing errors.
+`make test-protocols` checks full-duplex UART, SPI mode-0 exchange and I2C
+read/write firmware against external peers, including final NACK, stretching,
+framing errors, concurrent timing and independent context call state.
 
 Run `make synth` with Yosys for a generic structural synthesis check. A portable
 alternative is `make synth YOSYS="uvx --from yowasp-yosys yowasp-yosys"`.

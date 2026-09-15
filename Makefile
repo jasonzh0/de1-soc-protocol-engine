@@ -1,12 +1,17 @@
-.PHONY: test test-fpga test-fpga-legacy test-tt test-protocols test-template check-template synth quartus
+.PHONY: test test-fpga test-fpga-legacy test-tt test-protocols test-template test-arduino check-template synth quartus
 
 IVERILOG ?= iverilog
 VVP ?= vvp
 QUARTUS_SH ?= quartus_sh
 YOSYS ?= yosys
 PYTHON ?= python3
+ARDUINO_CLI ?= arduino-cli
 
 test: test-fpga test-fpga-legacy test-tt test-protocols
+
+# Optional hardware-peer compile; install pinned AVR core / AltSoftSerial first.
+test-arduino:
+	$(ARDUINO_CLI) compile --fqbn arduino:avr:uno --warnings all --build-path $(CURDIR)/build/arduino arduino/uno_protocol_tester
 
 # Install test/requirements.txt first. The template GDS action calls test/Makefile
 # directly with GATES=yes after supplying its CMOS5L netlist and PDK models.
