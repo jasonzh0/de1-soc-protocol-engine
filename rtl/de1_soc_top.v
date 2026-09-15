@@ -1,97 +1,91 @@
 `timescale 1ns/1ps
 `default_nettype none
 
-// DE1-SoC demo: repeatedly transmit UART 0x55, 115200 baud, 8N1.
-// Use the board's 50 MHz clock. KEY[0] is active-low reset.
-// GPIO_0[0] is TX; GPIO_0[0] means signal index, NOT header pin 0.
+// KEY3=C, KEY2=H, KEY1=U, KEY0=D: one UART byte per debounced key-down.
+// SW9=1 resets; SW9=0 runs. GPIO_0[0] is 3.3 V UART TX, 115200 8N1.
 module de1_soc_top #(
-    // Positive transition count; smaller values allow fast simulation.
-    parameter integer HEARTBEAT_EDGES = 57600
+    parameter integer DEBOUNCE_CYCLES = 500000
 ) (
     input  wire        CLOCK_50,
     input  wire [3:0]  KEY,
+    input  wire [9:0]  SW,
     output wire [9:0]  LEDR,
+    output wire [6:0]  HEX0,
+    output wire [6:0]  HEX1,
+    output wire [6:0]  HEX2,
+    output wire [6:0]  HEX3,
+    output wire [6:0]  HEX4,
+    output wire [6:0]  HEX5,
     inout  wire [35:0] GPIO_0
 );
     reg [1:0] reset_sync;
-    wire rst_n;
-    reg [4:0] load_addr;
-    reg loaded;
-    reg [15:0] load_data;
-    wire [7:0] pin_out;
-    wire [7:0] pin_oe;
-    wire fault;
-    localparam integer HEARTBEAT_WIDTH =
-        (HEARTBEAT_EDGES > 1) ? $clog2(HEARTBEAT_EDGES) : 1;
-    localparam [HEARTBEAT_WIDTH-1:0] HEARTBEAT_LAST = HEARTBEAT_EDGES - 1;
-    reg [HEARTBEAT_WIDTH-1:0] activity_count;
-    reg tx_previous;
+    wire rst_n = reset_sync[1];
+    wire [3:0] pressed;
+    reg [3:0] pending;
+    reg [3:0] selected;
+    reg [7:0] character;
+    reg [3:0] last_key;
     reg activity_led;
+    wire ready;
+    wire sent;
+    wire fault;
+    wire tx;
+    wire request = |pending;
+    wire accept = request && ready;
 
-    // Asynchronous reset assertion, synchronous release.
-    always @(posedge CLOCK_50 or negedge KEY[0]) begin
-        if (!KEY[0]) reset_sync <= 2'b00;
-        else         reset_sync <= {reset_sync[0], 1'b1};
-    end
-    assign rst_n = reset_sync[1];
-
-    // Board-only demo loader. A future UART/SPI host can replace this.
-    // 0: DIR 1
-    // 1..20: ten alternating SET / WAIT pairs (start, data, stop).
-    // 21: JMP 1
-    always @* begin
-        if (load_addr == 0)
-            load_data = 16'h3001;
-        else if (load_addr == 21)
-            load_data = 16'h4001;
-        else if (load_addr[0])
-            load_data = {4'h1, 11'b0, load_addr[1]};
-        else
-            load_data = 16'h21b0; // WAIT 432; SET+WAIT gives 434 clocks.
+    // Reset switch replaces KEY0 so all four keys can transmit characters.
+    always @(posedge CLOCK_50 or posedge SW[9]) begin
+        if (SW[9]) reset_sync <= 2'b00;
+        else       reset_sync <= {reset_sync[0], 1'b1};
     end
 
-    always @(posedge CLOCK_50 or negedge rst_n) begin
-        if (!rst_n) begin
-            load_addr <= 0;
-            loaded    <= 0;
-        end else if (!loaded) begin
-            if (load_addr == 21) loaded <= 1;
-            else load_addr <= load_addr + 1'b1;
-        end
-    end
-
-    protocol_engine engine (
-        .clk(CLOCK_50), .rst_n(rst_n), .run(loaded),
-        .prog_we(!loaded), .prog_addr(load_addr), .prog_data(load_data),
-        .pin_out(pin_out), .pin_oe(pin_oe), .fault(fault)
+    button_events #(.DEBOUNCE_CYCLES(DEBOUNCE_CYCLES)) buttons (
+        .clk(CLOCK_50), .rst_n(rst_n), .keys_n(KEY), .pressed(pressed)
     );
 
-    // Count actual engine TX transitions, not free-running clock cycles.
-    // The 0x55 demo produces about 115,200 transitions/second, so LEDR[2]
-    // changes state roughly every half second. No TX activity means no blink.
+    // Simultaneous presses are served in KEY3, KEY2, KEY1, KEY0 order.
+    always @* begin
+        selected = 0;
+        character = 0;
+        if (pending[3]) begin selected = 4'b1000; character = 8'h43; end
+        else if (pending[2]) begin selected = 4'b0100; character = 8'h48; end
+        else if (pending[1]) begin selected = 4'b0010; character = 8'h55; end
+        else if (pending[0]) begin selected = 4'b0001; character = 8'h44; end
+    end
+
     always @(posedge CLOCK_50 or negedge rst_n) begin
         if (!rst_n) begin
-            activity_count <= 0;
-            tx_previous    <= 0;
-            activity_led   <= 0;
+            pending      <= 0;
+            last_key     <= 0;
+            activity_led <= 0;
         end else begin
-            tx_previous <= pin_out[0];
-            if (!loaded || fault) begin
-                activity_count <= 0;
-                activity_led   <= 0;
-            end else if (pin_oe[0] && (pin_out[0] != tx_previous)) begin
-                if (activity_count == HEARTBEAT_LAST) begin
-                    activity_count <= 0;
-                    activity_led <= !activity_led;
-                end else activity_count <= activity_count + 1'b1;
-            end
+            // One pending event per key. At the default 10 ms debounce, four
+            // queued bytes finish (<0.4 ms) before a key can debounce again.
+            pending <= (pending & ~(accept ? selected : 4'b0)) | pressed;
+            if (accept) last_key <= selected;
+            if (sent) activity_led <= !activity_led;
+            if (fault) activity_led <= 0;
         end
     end
 
-    // Hold UART idle high during loading; release pins if the core faults.
-    assign GPIO_0[0] = fault ? 1'bz : (pin_oe[0] ? pin_out[0] : 1'b1);
+    uart_program_sender sender (
+        .clk(CLOCK_50), .rst_n(rst_n), .valid(request), .data(character),
+        .ready(ready), .tx(tx), .sent(sent), .fault(fault)
+    );
+
+    assign GPIO_0[0] = tx;
     assign GPIO_0[35:1] = {35{1'bz}};
-    assign LEDR = {7'b0, activity_led, fault, loaded};
+    // 0=enabled, 1=fault, 2=toggles per completed byte, 3=busy,
+    // 9:6=last accepted key (KEY3..KEY0). 5:4 are unused.
+    assign LEDR = {last_key, 2'b0, (rst_n && !ready), activity_led, fault, rst_n};
+    // Active-low segments [6:0] = {g,f,e,d,c,b,a}; rightmost four spell CHUd.
+    assign HEX3 = 7'b1000110; // C: a,d,e,f
+    assign HEX2 = 7'b0001001; // H: b,c,e,f,g
+    assign HEX1 = 7'b1000001; // U: b,c,d,e,f
+    assign HEX0 = 7'b0100001; // d: b,c,d,e,g (seven-segment form of D)
+    assign HEX4 = 7'b1111111;
+    assign HEX5 = 7'b1111111;
+    wire _unused = &{SW[8:0], 1'b0};
 endmodule
 
 `default_nettype wire

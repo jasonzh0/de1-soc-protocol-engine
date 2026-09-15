@@ -9,7 +9,7 @@ test: test-fpga test-tt
 
 test-fpga:
 	mkdir -p build
-	$(IVERILOG) -g2012 -Wall -s tb_uart -o build/tb_uart test/tb_uart.v src/protocol_engine.v rtl/de1_soc_top.v
+	$(IVERILOG) -g2012 -Wall -s tb_uart -o build/tb_uart test/tb_uart.v src/protocol_engine.v rtl/button_events.v rtl/uart_program_sender.v rtl/de1_soc_top.v
 	$(VVP) build/tb_uart
 
 test-tt:
