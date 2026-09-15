@@ -1,114 +1,132 @@
-# Quartus Prime setup
+# Quartus Prime: protocol engine on DE1-SoC H1
 
-## Requirements
+## Open and program
 
-- Target board: Terasic DE1-SoC revision H1, Cyclone V `5CSEMA5F31C6`.
-- Quartus Prime Lite or Standard with Cyclone V device support.
-- A supported Windows or Linux host. Quartus has no native macOS build.
-- USB-Blaster driver/access configured for programming.
+Use Quartus Prime Lite or Standard with Cyclone V support on Windows/Linux.
+Target device: **5CSEMA5F31C6**. Native Quartus is not available on this Mac.
 
-## Open, compile, program
+1. Keep `src/`, `rtl/`, `firmware/` and `quartus/` together.
+2. Open **quartus/de1_soc_demo.qpf**. The active top is **de1_protocol_top**.
+   The project filename is retained for compatibility; it no longer boots CHUD.
+3. Select **Processing → Start Compilation** and review errors/timing reports.
+4. On H/H1 set **SW17.1=1, SW17.2=0** for the FPGA JTAG path. Connect the
+   board's USB-Blaster II port J13, power up, and open **Tools → Programmer**.
+5. Choose USB-Blaster/JTAG, add **quartus/output_files/de1_soc_demo.sof**,
+   enable Program/Configure for the FPGA, then Start.
+6. Raise SW9, set SW1:0, then lower SW9. The firmware is loaded automatically.
 
-1. Download this repository to the computer running Quartus.
-2. Select **File → Open Project → quartus/de1_soc_demo.qpf**.
-3. Confirm the project hierarchy shows `de1_soc_top`.
-4. Select **Processing → Start Compilation**. Review errors and timing reports.
-5. For Rev. H/H1, select the FPGA JTAG path with **SW17.1 = 1, SW17.2 = 0**.
-   Connect the board's USB-Blaster II port (J13) and power on the board.
-6. Select **Tools → Programmer → Hardware Setup → USB-Blaster** (the displayed
-   name may include II), and select JTAG mode.
-7. Add `quartus/output_files/de1_soc_demo.sof`. If you use Auto Detect, assign
-   the SOF to the FPGA device rather than adding a duplicate device entry.
-8. Check Program/Configure and click Start.
-9. Set SW9 to **1**, then **0** to reset and enable the demo. Press KEY3 for C,
-   KEY2 for H, KEY1 for U, or KEY0 for D. Each debounced key-down sends one byte;
-   holding and releasing send nothing extra. UART is 115200 baud, 8N1, no flow
-   control, with no appended newline. HEX3–HEX0 display `C H U d` continuously;
-   HEX5–HEX4 are blank.
+| SW1 | SW0 | Mode | Wiring / behavior |
+| --- | --- | --- | --- |
+| 0 | 0 | UART TX | GPIO_0[0] → receiver RX; repeats 0x55 (`U`), 115200 8N1 |
+| 0 | 1 | UART RX | Sender TX → GPIO_0[0]; receives one byte, checks stop bit |
+| 1 | 0 | SPI mode 0 | GPIO_0[0]=SCK, [1]=MOSI, [2]=MISO, [3]=active-low CS; 100 kHz |
+| 1 | 1 | I2C write | GPIO_0[0]=SDA, [1]=SCL; address 0x50, payload 0xA5, <=100 kHz |
 
-With no external receiver, check **LEDR[0] on, LEDR[1] off**. LEDR[2] toggles
-once per completed byte, so it changes when a key is pressed and stays steady
-while the key is held. LEDR[9:6] show the last accepted key (KEY3..KEY0).
-LEDR[3] indicates busy; a frame lasts only about 87 microseconds, so that LED
-may be too brief to see. These indicators do not validate the external wiring.
+Mode switches are latched at boot. Change them while SW9 is high; reset again
+to switch protocols or repeat a one-shot RX/SPI/I2C transaction. KEY buttons are
+unused. GPIO_0[7:0] connect to the engine; unused outputs stay released, and
+GPIO_0[35:8] are always tri-stated.
 
-Loading a SOF configures volatile FPGA memory; program again after power loss.
-The included project does not configure flash boot or the ARM HPS.
+Use **3.3 V-compatible** logic, common ground, and no RS-232/5 V signals.
+I2C needs external pull-ups on both lines to the compatible board supply.
+Check wiring before switching modes: the same header positions change roles.
+The USB-Blaster is not a UART upload or protocol-data connection.
 
-## Pin assignments and source
+## Status without a receiver
 
-All 103 top-level bits have explicit package locations and 3.3-V LVTTL standards:
-one clock, four buttons, ten switches, ten LEDs, 42 display segments, and 36 GPIO signals. Other device pins are
-reserved as tri-stated inputs.
+| Indicator | Meaning |
+| --- | --- |
+| LEDR0 | Engine is running without a fault (including firmware idle loops) |
+| LEDR1 | Fault; reset to recover |
+| LEDR2 | Toggles once per captured result; one capture in RX/SPI/I2C examples |
+| LEDR3 | WAIT_PIN condition not yet met |
+| LEDR5:4 | Latched SW1:0 mode |
+| LEDR9 | Heartbeat, toggles every ~0.67 s while running without fault |
+| HEX5 | Mode 0, 1, 2 or 3 |
+| HEX1:0 | Last captured byte in hexadecimal |
+| HEX4:2, LEDR8:6 | Blank/off |
 
-Selected assignments:
+Heartbeat indicates clocked execution, not successful protocol communication.
+UART RX normally waits with LEDR3 on until a sender supplies a start bit.
+A disconnected I2C target NACKs if pull-ups are present; LEDR1 then turns on.
+A stuck-low bus waits indefinitely until SW9 resets it.
 
-| Signal | FPGA package pin | Function |
-| --- | --- | --- |
-| CLOCK_50 | AF14 | 50 MHz oscillator |
-| SW[9] | AE12 | Reset (1) / run (0) |
-| KEY[0] | AA14 | Active-low D key |
-| LEDR[0] | V16 | Demo enabled |
-| LEDR[1] | W16 | Invalid instruction |
-| LEDR[2] | V17 | Toggles per transmitted byte |
-| GPIO_0[0] | AC18 | UART TX |
+For a no-external-device data test, jumper **GPIO_0[1] to GPIO_0[2]** for SPI
+MOSI→MISO loopback. Reset into mode 10. Expect HEX1:0=`A5`, LEDR2 on and
+LEDR1 off. The pin indices are signal indices, not physical header positions.
 
-These are FPGA package pins, not GPIO connector pin numbers.
+## Change firmware
 
-All 103 pin locations and all 103 I/O standards were compared with Terasic's
-official [DE1-SoC Rev. H System CD v6.0.0](https://download.terasic.com/downloads/cd-rom/de1-soc/DE1-SoC_v.6.0.0_HWrevH_SystemCD.zip),
-specifically `Demonstrations/FPGA/DE1_SOC_golden_top/DE1_SOC_golden_top.qsf`.
-There are no differences for the signals used by this project. The device
-selection is also unchanged. The original clock/key/LED/GPIO assignments also match the previously checked
-[Rev. F/G System CD v5.1.3](https://download.terasic.com/downloads/cd-rom/de1-soc/DE1-SoC_v.5.1.3_HWrevF.revG_SystemCD.zip).
+Edit the checked-in `firmware/*.hex` programs, then recompile and reprogram.
+The FPGA-only boot adapter embeds these as ROMs and writes the selected program
+through the normal core programming port after reset. It loads the last word
+before asserting RUN. The ASIC does not contain these boot ROMs.
 
-The user's board is marked H1; Terasic labels this published support package
-Rev. H. This records verification against that reference, not a physical test
-of an H1 board. See [Terasic's download index](https://download.terasic.com/downloads/cd-rom/de1-soc/)
-for the official packages.
+See [firmware configuration](../firmware/README.md). The boot adapter's ROM
+lengths must be updated if a program gains/loses instructions. All supplied
+firmware assumes a 50 MHz clock. The loader waits four clocks for synchronized
+mode inputs and loads a word per clock; it is not an asynchronous UART receiver.
 
-The Rev. H package's `UserManual/DE1-SoC_User_manual.pdf` (January 9, 2022),
-section 3.2, page 17, specifies **SW17.1 = 1, SW17.2 = 0** for FPGA JTAG
-programming. This selects the Cyclone V path; it is not the SW10 boot-mode switch.
+SOF programming is volatile; reload after power loss. This project does not
+configure flash boot or the ARM HPS.
 
-## Timing constraints
+## H1 pin/reference checks
 
-- CLOCK_50 has a 20 ns period.
-- Clock uncertainty is derived by Quartus.
-- SW[9] is asynchronous to the two-register reset synchronizer. Only its path
-  to those synchronizer registers is excluded from timing; internal reset paths
-  remain subject to recovery/removal checks.
-- KEY inputs are asynchronous and feed two-register synchronizers before the
-  10 ms debounce counters. Only input paths to the first register stage are
-  excluded from timing; the inter-stage paths remain timed.
-- UART TX, LEDs and displays have no externally related sampling clock. Their external
-  output paths are false-pathed; internal engine paths remain timed at 50 MHz.
-- Revisit GPIO timing exceptions when adding SPI or any other clocked interface.
+All 103 top-level bits retain explicit locations and 3.3-V LVTTL standards:
+CLOCK_50, four KEY inputs, ten switches, ten LEDs, six seven-segment displays
+and 36 GPIO signals. Unused device pins are reserved as tri-stated inputs.
 
-The constraints express the demo's intent; a passing hardware timing result
-still requires a full Quartus compilation. Do not interpret simulation success
-as timing closure or board verification.
+| Signal | FPGA package pin |
+| --- | --- |
+| CLOCK_50 | AF14 |
+| SW[9] | AE12 |
+| GPIO_0[0] | AC18 |
 
-## Troubleshooting
+Package pins are not connector pin numbers. The pin mapping was compared with
+[Terasic Rev. H System CD v6.0.0](https://download.terasic.com/downloads/cd-rom/de1-soc/DE1-SoC_v.6.0.0_HWrevH_SystemCD.zip),
+`Demonstrations/FPGA/DE1_SOC_golden_top/DE1_SOC_golden_top.qsf`; all 103
+locations/standards match. Terasic names the package Rev. H, while this board
+is marked H1. This is reference verification, not a physical board test.
+The included manual (January 9, 2022), section 3.2, specifies the JTAG switch
+settings above.
+
+## Timing and verification limits
+
+CLOCK_50 is constrained to 20 ns with derived uncertainty. SW9 feeds the reset
+synchronizer; mode switches and GPIO inputs feed two-stage synchronizers.
+Only asynchronous input paths to first stages are false-pathed; inter-stage
+and internal reset recovery/removal paths remain timed.
+
+LED/display outputs are false-pathed. Register-to-GPIO outputs instead have a
+20 ns maximum path budget. This is a prototype routing constraint, **not** an
+external device/cable setup-hold model. Firmware provides microsecond-scale
+timing at these initial SPI/I2C rates; inspect actual board loads, clock/data
+skew and peer specifications before increasing speed.
+
+No Quartus compilation/timing closure or board test has been performed here.
+Icarus board-wrapper simulations and generic synthesis are separate checks.
+
+## Commands and troubleshooting
+
+```sh
+make quartus
+make test-fpga
+```
+
+The equivalent Quartus command inside `quartus/` is
+`quartus_sh --flow compile de1_soc_demo`. FPGA simulation runs from that
+directory so the firmware ROM paths match Quartus.
 
 | Symptom | Check |
 | --- | --- |
-| Device not installed | Install Cyclone V device support for your Quartus version |
-| Top-level entity missing | Open the QPF; the entity is `de1_soc_top` |
-| Source file missing | Keep `src`, `rtl`, and `quartus` in their original relative locations |
-| No USB-Blaster detected | Check J13, cable, power, driver, and OS permissions |
-| USB-Blaster detected but FPGA missing | On Rev. H/H1, check SW17.1 = 1 and SW17.2 = 0, then Auto Detect |
-| Terminal is blank | Use 3.3 V USB-UART RX on GPIO_0[0], common ground, 115200 8N1; reset with SW9=1 then 0; press a key |
-| Board has another revision | Compare its official pin table with `de1_soc_pins.qsf` |
+| Top missing/wrong | Reopen QPF; active entity must be de1_protocol_top |
+| Firmware file missing | Keep firmware/ beside quartus/; compile from the project directory |
+| No USB-Blaster | J13, cable, power, driver and OS permissions |
+| FPGA not found | SW17.1=1, SW17.2=0, JTAG Auto Detect |
+| UART terminal blank | Mode 00, GPIO_0[0] to adapter RX, common ground, 115200 8N1 |
+| RX waiting forever | Mode 01 needs an external sender and idle-high RX |
+| I2C fault | Correct address/device, power, pull-ups; NACK intentionally faults |
+| Mode did not change | Raise SW9 before changing SW1:0, then lower it |
+| Still showing CHUD | Recompile and program the new SOF, not an older bitstream |
 
-## Command-line build
-
-In a Quartus command shell, from the `quartus` directory:
-
-```sh
-quartus_sh --flow compile de1_soc_demo
-```
-
-From the repository root with Make installed, the equivalent command is
-`make quartus`. Simulation uses `make test` and requires Icarus Verilog, not
-Quartus. Simulation and hardware compilation are separate checks.
+The old key-demo RTL/test remain for regression only; the active QSF excludes them.

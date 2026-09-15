@@ -78,8 +78,9 @@ module uart_program_sender (
 
     protocol_engine engine (
         .clk(clk), .rst_n(rst_n), .run(state == EXECUTE),
-        .prog_we(state == LOAD), .prog_addr(load_addr), .prog_data(load_data),
-        .pin_out(pin_out), .pin_oe(pin_oe), .fault(core_fault)
+        .prog_we(state == LOAD), .prog_addr({1'b0, load_addr}), .prog_data(load_data),
+        .pin_in(8'b0), .pin_out(pin_out), .pin_oe(pin_oe), .fault(core_fault),
+        .sample_data(), .sample_toggle(), .stalled()
     );
     assign ready = (state == IDLE) && rst_n;
     assign tx = ((state == EXECUTE) && pin_oe[0] && !fault) ? pin_out[0] : 1'b1;

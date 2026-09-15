@@ -1,0 +1,52 @@
+# Adapted from TinyTapeout/ttihp-verilog-template, branch cmos5l,
+# commit b86a2a781484bcab7ba522dc5de540086695a430.
+# CI IS PAUSED: no push trigger and every job is disabled, even on dispatch.
+# Only remove these guards when the user explicitly asks to resume CI.
+name: gds
+
+on:
+  workflow_dispatch:
+
+jobs:
+  gds:
+    if: ${{ false }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - name: Build GDS
+        uses: TinyTapeout/tt-gds-action@ihp-cmos5l
+        with:
+          pdk: ihp-sg13cmos5l
+
+  precheck:
+    if: ${{ false }}
+    needs: gds
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Run Tiny Tapeout Precheck
+        uses: TinyTapeout/tt-gds-action/precheck@ihp-cmos5l
+
+  gl_test:
+    if: ${{ false }}
+    needs: gds
+    runs-on: ubuntu-24.04
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - name: GL test
+        uses: TinyTapeout/tt-gds-action/gl_test@ihp-cmos5l
+
+  viewer:
+    if: ${{ false }}
+    needs: gds
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - uses: TinyTapeout/tt-gds-action/viewer@ihp-cmos5l

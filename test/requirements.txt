@@ -1,0 +1,4 @@
+# Versions from the pinned CMOS5L template; PyYAML is for check-template.
+pytest==8.4.2
+cocotb==2.0.1
+PyYAML==6.0.2

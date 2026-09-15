@@ -1,0 +1,41 @@
+// 50 MHz, <=100 kHz SCL plus stretch time, SDA=0, SCL=1.
+// External pull-ups REQUIRED. Write A5 to 7-bit address 50, check both ACKs.
+// Fault/release on NACK. One-level CALL reuses the byte transfer routine.
+1000 // 00 SET all output values low (open drain)
+3000 // 01 DIR release bus
+a009 // 02 WAIT_PIN SCL high (idle/bus available)
+a008 // 03 WAIT_PIN SDA high
+20f9 // 04 WAIT 249
+d008 // 05 DIR_PIN SDA drive low: START
+20f9 // 06 WAIT 249
+d009 // 07 DIR_PIN SCL drive low
+50a0 // 08 LOAD_TX (address 50 << 1) | write=0 -- configure address here
+f115 // 09 CALL 21
+50a5 // 10 LOAD_TX data A5 -- configure data here
+f115 // 11 CALL 21
+d008 // 12 DIR_PIN SDA drive low before STOP
+20f9 // 13 WAIT 249
+d001 // 14 DIR_PIN SCL release
+a009 // 15 WAIT_PIN SCL high (clock stretching)
+20f9 // 16 WAIT 249
+d000 // 17 DIR_PIN SDA release: STOP
+e000 // 18 CAPTURE ACK samples (00 on success)
+4013 // 19 JMP 19 idle
+0000 // 20 Invalid opcode: NACK handler faults and releases bus
+8008 // 21 COUNT 8
+6018 // 22 OUT SDA MSB first, open drain
+20f9 // 23 WAIT 249
+d001 // 24 DIR_PIN SCL release
+a009 // 25 WAIT_PIN SCL high
+20f9 // 26 WAIT 249
+d009 // 27 DIR_PIN SCL drive low
+9016 // 28 LOOP 22
+d000 // 29 DIR_PIN SDA release for ACK
+20f9 // 30 WAIT 249
+d001 // 31 DIR_PIN SCL release
+a009 // 32 WAIT_PIN SCL high
+20f9 // 33 WAIT 249
+7000 // 34 IN SDA (ACK=0)
+b148 // 35 JMP_PIN SDA high -> 20 (NACK)
+d009 // 36 DIR_PIN SCL drive low
+f200 // 37 RETURN

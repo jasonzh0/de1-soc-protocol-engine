@@ -1,13 +1,15 @@
 name: UART simulation
-on: [push, pull_request, workflow_dispatch]
+# CI is paused by user request. Keep both the trigger and job guard in place.
+on: [workflow_dispatch]
 permissions:
   contents: read
 jobs:
   simulate:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install Icarus Verilog
         run: sudo apt-get update && sudo apt-get install -y iverilog
-      - name: Decode three UART frames
+      - name: Check FPGA and Tiny Tapeout behavior
         run: make test

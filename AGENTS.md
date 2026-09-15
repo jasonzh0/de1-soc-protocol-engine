@@ -8,11 +8,15 @@
 - Document interface timing, reset/enable behavior, and error handling alongside
   any change. Never silently change instruction cycle counts.
 - Keep submission RTL in `src/`. Update applicable source lists in `info.yaml`,
-  `Makefile`, `scripts/synth.ys`, and Quartus settings when files change.
+  `Makefile`, `test/Makefile`, `scripts/synth.ys`, and Quartus settings when files change.
 - Use public module ports for behavioral verification. Prefer end-to-end tests
   that demonstrate observable behavior over private-register assertions.
 - Run the relevant local tests after RTL changes. `make test` covers both targets;
   `make synth` checks generic synthesis when Yosys is available.
 - GitHub CI is intentionally paused. Do not enable it without the user's request.
+- Keep protocol behavior in firmware for the shared engine, not separate fixed
+  UART/SPI/I2C hardware. Document ISA changes in `docs/isa.md`.
+- Preserve template alignment (`docs/template.md`). The Python compiler/library
+  and UART uploading transport are deferred; template Cocotb tests are separate.
 - Distinguish simulation/generic synthesis from actual Quartus builds and
   CMOS5L physical verification. Do not claim tapeout readiness without evidence.

@@ -1,0 +1,39 @@
+# CMOS5L template workflow with local regression/consistency checks added.
+# CI is paused; do not remove the guard without the user's request.
+name: test
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    if: ${{ false }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - name: Install Icarus Verilog
+        run: sudo apt-get update && sudo apt-get install -y iverilog
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install Python packages
+        run: pip install -r test/requirements.txt
+      - name: Check template contract and board regressions
+        run: make check-template test
+      - name: Run template test harness
+        run: make test-template
+      - name: Test Summary
+        uses: test-summary/action@v2.4
+        with:
+          paths: test/results.xml
+        if: always()
+      - name: Upload waveform and test results
+        uses: actions/upload-artifact@v7
+        if: success() || failure()
+        with:
+          name: test-results
+          path: |
+            test/tb.fst
+            test/results.xml

@@ -13,7 +13,7 @@ module program_loader (
     input  wire [3:0] data,
     output reg        run,
     output wire       prog_we,
-    output reg  [4:0] prog_addr,
+    output reg  [5:0] prog_addr,
     output reg [15:0] prog_data,
     output wire       word_ready,
     output reg        error
@@ -55,7 +55,7 @@ module program_loader (
                 case (command)
                     ADDR_LO: prog_addr[3:0] <= data;
                     ADDR_HI: begin
-                        if (data[3:1] == 0) prog_addr[4] <= data[0];
+                        if (data[3:2] == 0) prog_addr[5:4] <= data[1:0];
                         else error <= 1;
                     end
                     DATA: begin

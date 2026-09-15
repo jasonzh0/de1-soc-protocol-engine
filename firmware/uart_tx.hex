@@ -1,0 +1,13 @@
+// 50 MHz, 115207 baud (434 clocks/bit), TX pin 0, repeat byte 55.
+1001 // 00 SET idle high
+3001 // 01 DIR TX output
+5055 // 02 LOAD_TX 55 -- change this byte to configure data
+8008 // 03 COUNT 8
+c000 // 04 SET_PIN TX low: start
+21b0 // 05 WAIT 432 (start + WAIT = 434 clocks)
+6000 // 06 OUT TX LSB first
+21af // 07 WAIT 431 (OUT + WAIT + LOOP = 434 clocks)
+9006 // 08 LOOP 6
+c008 // 09 SET_PIN TX high: stop
+21b0 // 10 WAIT 432
+4002 // 11 JMP 2 (slightly extended stop/idle gap)

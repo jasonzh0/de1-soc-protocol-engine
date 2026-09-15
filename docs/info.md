@@ -2,11 +2,13 @@
 
 ## How it works
 
-A 32-word, 16-bit programmable engine drives eight pins. Its SET, DIR, WAIT,
-and JMP instructions generate timed digital waveforms. Program data comes from
-the dedicated Tiny Tapeout inputs; all eight bidirectional pins are reserved
-for protocol signals. The current ISA produces outputs only and does not sample
-`uio_in`. The DE1-SoC demo and this wrapper share `src/protocol_engine.v`.
+A 64-word, 16-bit programmable engine reads and drives eight pins. Timing,
+shifts, loops, branches and one-level calls implement protocols in firmware.
+Program data comes from dedicated Tiny Tapeout inputs; all eight bidirectional
+pins remain available for protocol signals. The DE1-SoC demo shares the same
+`src/protocol_engine.v`. The active FPGA wrapper boots selectable firmware;
+its example ROMs are not part of this ASIC. See [ISA](isa.md) and
+[firmware](../firmware/README.md).
 
 Top module: `tt_um_jasonzh0_protocol_engine`.
 
@@ -23,13 +25,19 @@ host clock-domain crossing circuit. Do not treat `host_strobe` as a clock.
 | `ui_in[7]` | Command strobe |
 | `uo_out[0]` | Running and not faulted |
 | `uo_out[1]` | Core fault: invalid opcode or unwritten instruction |
-| `uo_out[2]` | Sticky loader error |
+| `uo_out[2]` | Sticky host error (loader or read selector) |
 | `uo_out[3]` | Four data nibbles staged, ready for WRITE |
 | `uo_out[4]` | Toggles once per command strobe, including rejected commands |
-| `uo_out[7:5]` | Always zero |
+| `uo_out[5]` | Capture toggle: changes on each published byte |
+| `uo_out[6]` | Waiting for a pin condition |
+| `uo_out[7]` | Zero in status mode |
 | `uio_out[7:0]` | Engine output values |
 | `uio_oe[7:0]` | Per-pin drive enable: 1 drives, 0 releases |
-| `uio_in[7:0]` | Reserved input path; currently unused |
+| `uio_in[7:0]` | Protocol inputs, synchronized in the core |
+
+The uo_out fields above describe **status mode** (default). Command `(6,1)`
+selects the last captured byte on all eight uo_out bits; `(6,0)` restores status.
+ACK/error/status are hidden in result mode; command timing does not change.
 
 A command is processed when strobe changes from sampled low to sampled high.
 Hold the command/data stable for that sampling edge. Keep strobe low for at
@@ -44,21 +52,28 @@ the command was valid.
 | --- | --- | --- |
 | 0 | HALT | Stop; reset write address to 0; discard partial word; clear loader error |
 | 1 | ADDR_LO | Set write-address bits 3:0 |
-| 2 | ADDR_HI | Set address bit 4; only data 0 or 1 is valid |
+| 2 | ADDR_HI | Set address bits 5:4; only data 0–3 is valid |
 | 3 | DATA | Append a nibble, most-significant nibble first; exactly four per word |
-| 4 | WRITE | Commit staged word; clear word_ready; increment address modulo 32 |
+| 4 | WRITE | Commit staged word; clear word_ready; increment address modulo 64 |
 | 5 | RUN | Start at instruction 0, provided no partial word or loader error exists |
-| 6–7 | Reserved | Set loader error |
+| 6 | READ_SELECT | Data 0 selects status; 1 selects captured byte; other values flag host error |
+| 7 | Reserved | Set loader error |
 
 Command data is ignored for HALT, WRITE and RUN. Address selection does not
 discard a staged word. A fifth DATA nibble and a WRITE with fewer than four
 nibbles set loader_error without changing the staged word or program memory.
-While running (including a core fault), only HALT is accepted. Other commands
-set loader_error without changing the program or stopping the core.
+While running (including a core fault), only HALT and READ_SELECT are accepted.
+Other commands set loader_error without changing the program or stopping the core.
 
 Loader errors remain until HALT, reset, or clocked deselection. Valid loading
 commands can still modify the staging registers/memory after a loader error,
 but RUN remains blocked. The recommended recovery is HALT and reload.
+Invalid READ_SELECT values leave the selector unchanged and set a separate
+sticky read error, cleared by HALT/reset/clocked deselection. Unlike a program
+loader error, a read-selection error does not inhibit RUN. HALT also restores
+status mode; the last captured result and capture toggle survive HALT and
+clocked deselection, but reset clears them. CAPTURE is not buffered: a later
+capture overwrites the result, and two captures can cancel the toggle indication.
 
 ### Minimal program example
 
@@ -107,11 +122,13 @@ words. Assert reset to invalidate all previous instructions before a clean load.
 
 ## How to test
 
-Run `make test` from the repository root. The tests check the FPGA key-down
-demo and upload UART firmware through only the Tiny Tapeout pins, decoding
+Run `make test` from the repository root. The tests check the active FPGA
+boot/mode adapter, legacy key-down demo and upload UART firmware through only the Tiny Tapeout pins, decoding
 three 0x55 frames followed by reprogramming and decoding two 0xAA frames.
-They also check malformed commands, address 31 and wraparound, protected
+They also check malformed commands, address 63 and wraparound, protected
 running writes, output directions, faults, reset and deselection.
+`make test-protocols` checks the checked-in UART TX/RX, SPI mode-0 and I2C-write
+firmware against external peers, including NACK, stretching and framing errors.
 
 Run `make synth` with Yosys for a generic structural synthesis check. A portable
 alternative is `make synth YOSYS="uvx --from yowasp-yosys yowasp-yosys"`.
@@ -140,7 +157,8 @@ explicitly specifies `6x4`. The allocation here follows the competition rule.
 
 Simulation and generic synthesis have passed. No CMOS5L mapped area, physical
 design, DRC/LVS, timing closure, or fabricated-chip validation is claimed. The
-instruction store currently infers 512 data flip-flops plus 32 resettable
+instruction store now infers 1024 data flip-flops plus 64 resettable
 validity bits; assess that cost in the real process before selecting SRAM.
-This repository does not bundle the Tiny Tapeout toolchain or a GDS workflow;
-use the official CMOS5L tooling for the physical-flow step. CI remains paused.
+Template-derived GDS/precheck/GL/docs workflows and an RTL/GL-compatible test
+harness are now present, all explicitly paused. See [template alignment](template.md).
+The physical tools/PDK, mapped results and GDS are not bundled. CI remains paused.

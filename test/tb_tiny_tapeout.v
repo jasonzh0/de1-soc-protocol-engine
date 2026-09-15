@@ -62,9 +62,9 @@ module tb_tiny_tapeout;
     endtask
 
     task set_address;
-        input [4:0] address;
+        input [5:0] address;
         begin
-            command(2, {3'b0, address[4]}, 1);
+            command(2, {2'b0, address[5:4]}, 1);
             command(1, address[3:0], 1);
         end
     endtask
@@ -134,10 +134,10 @@ module tb_tiny_tapeout;
         command(5, 0, 1);
         if (status[0] !== 0) $fatal(1, "RUN must reject pending data/error");
         halt;
-        command(2, 2, 1);
+        command(2, 4, 1);
         if (status[2] !== 1) $fatal(1, "Out-of-range address must fail");
         halt;
-        command(6, 0, 1);
+        command(7, 0, 1);
         if (status[2] !== 1) $fatal(1, "Reserved command must fail");
         halt;
 
@@ -151,12 +151,12 @@ module tb_tiny_tapeout;
         if (status[2] !== 1) $fatal(1, "Fifth nibble must fail");
         halt;
 
-        // Write 31, auto-increment/wrap to 0; execute both address ranges.
-        set_address(31);
-        write_word(16'h10a5); // address 31: SET A5
+        // Write 63, auto-increment/wrap to 0; execute both address ranges.
+        set_address(63);
+        write_word(16'h10a5); // address 63: SET A5
         write_word(16'h30ff); // address 0: DIR FF
         set_address(1);
-        write_word(16'h401f); // address 1: JMP 31 (then PC wraps back to 0)
+        write_word(16'h403f); // address 1: JMP 63 (then PC wraps back to 0)
         command(5, 0, 1);
         clocks(10);
         if (pads !== 8'ha5 || pin_oe !== 8'hff || status[2:0] !== 3'b001)

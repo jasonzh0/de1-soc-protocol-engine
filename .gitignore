@@ -18,3 +18,15 @@
 quartus/c5_pin_model_dump.txt
 *.vcd
 *.fst
+*.fst.hier
+/runs/
+/tt_submission/
+/tt/
+/src/user_config.json
+/src/config_merged.json
+/test/sim_build/
+/test/results.xml
+/test/gate_level_netlist.v
+__pycache__/
+.pytest_cache/
+.venv/

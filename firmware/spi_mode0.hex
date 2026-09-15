@@ -1,0 +1,18 @@
+// 50 MHz, 100 kHz SCK, MSB first, one byte A5.
+// SCK=0, MOSI=1, MISO=2, CS_n=3. Capture received byte in result register.
+1008 // 00 SET CS high / SCK low
+300b // 01 DIR SCK, MOSI, CS outputs; MISO input
+50a5 // 02 LOAD_TX A5 -- configure byte here
+f000 // 03 CLEAR_RX
+8008 // 04 COUNT 8
+c003 // 05 SET_PIN CS low
+6011 // 06 OUT MOSI MSB first
+20f6 // 07 WAIT 246 (low half includes OUT, LOOP and SET_PIN)
+c008 // 08 SET_PIN SCK high
+20f7 // 09 WAIT 247
+7012 // 10 IN MISO MSB first (stable before falling edge)
+c000 // 11 SET_PIN SCK low
+9006 // 12 LOOP 6
+e000 // 13 CAPTURE RX byte
+c00b // 14 SET_PIN CS high
+400f // 15 JMP 15, idle until host halts/restarts

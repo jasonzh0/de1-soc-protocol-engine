@@ -5,12 +5,16 @@ derive_clock_uncertainty
 # through two clocked stages; keep the internal reset recovery/removal paths.
 set_false_path -from [get_ports {SW[9]}] -to [get_registers {*reset_sync*}]
 
-# Asynchronous buttons feed only the first stage of a two-register input
-# synchronizer. Keep the path between synchronizer stages timed.
-set_false_path -from [get_ports {KEY[*]}] -to [get_registers {*key_meta*}]
+# Mode switches and protocol inputs enter two-stage synchronizers.
+# Only the first-stage input paths are false-pathed; inter-stage paths are timed.
+set_false_path -from [get_ports {SW[0] SW[1]}] -to [get_registers {*mode_meta*}]
+set_false_path -from [get_ports {GPIO_0[*]}] -to [get_registers {*pin_meta*}]
 
-# LEDs, seven-segment displays and UART TX have no external sampling clock.
-# These exceptions cover external output timing only; internal paths remain
-# timed at 50 MHz. UART bit duration is checked in simulation.
-# Revisit these exceptions when implementing synchronous external protocols.
-set_false_path -to [get_ports {LEDR[*] HEX0[*] HEX1[*] HEX2[*] HEX3[*] HEX4[*] HEX5[*] GPIO_0[*]}]
+# Human-visible outputs have no external timing requirement.
+set_false_path -to [get_ports {LEDR[*] HEX0[*] HEX1[*] HEX2[*] HEX3[*] HEX4[*] HEX5[*]}]
+
+# Bound register-to-GPIO routing instead of false-pathing protocol outputs.
+# This is a prototype 20 ns path budget, NOT a slave/board setup-hold model.
+# At 100 kHz SPI/I2C the firmware provides microseconds of pin timing margin.
+# Review actual timing/loads and add peer-specific constraints before speeding up.
+set_max_delay 20.000 -from [get_registers {*}] -to [get_ports {GPIO_0[*]}]

@@ -1,0 +1,14 @@
+// 50 MHz, 115207 baud, 8N1, receive one byte on pin 0.
+// Sample at bit centers, validate stop bit, CAPTURE or fault; host restarts.
+3000 // 00 DIR all input
+f000 // 01 CLEAR_RX
+a000 // 02 WAIT_PIN RX low: start edge (synchronized input)
+2287 // 03 WAIT 647, first IN near center of data bit 0
+8008 // 04 COUNT 8
+7000 // 05 IN RX LSB first
+21af // 06 WAIT 431: IN + WAIT + LOOP = 434 clocks
+9005 // 07 LOOP 5
+b0a8 // 08 JMP_PIN RX high -> 10, valid stop
+0000 // 09 Fault on framing error
+e000 // 10 CAPTURE byte
+400b // 11 JMP 11 idle

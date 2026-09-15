@@ -1,0 +1,15 @@
+# CMOS5L template workflow; intentionally paused by user request.
+name: docs
+on:
+  workflow_dispatch:
+jobs:
+  docs:
+    if: ${{ false }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - name: Build docs
+        uses: TinyTapeout/tt-gds-action/docs@ihp-cmos5l
