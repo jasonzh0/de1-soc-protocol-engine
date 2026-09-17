@@ -19,8 +19,35 @@ module protocol_engine (
     output reg        sample_toggle,
     output wire       stalled
 );
+    // ISA v1.1 encodings. These names describe the firmware interface; changing
+    // an encoding or instruction latency requires coordinated firmware changes.
+    localparam [3:0]
+        OP_SET      = 4'h1,
+        OP_WAIT     = 4'h2,
+        OP_DIR      = 4'h3,
+        OP_JMP      = 4'h4,
+        OP_LOAD_TX  = 4'h5,
+        OP_OUT      = 4'h6,
+        OP_IN       = 4'h7,
+        OP_COUNT    = 4'h8,
+        OP_LOOP     = 4'h9,
+        OP_WAIT_PIN = 4'ha,
+        OP_JMP_PIN  = 4'hb,
+        OP_SET_PIN  = 4'hc,
+        OP_DIR_PIN  = 4'hd,
+        OP_CAPTURE  = 4'he,
+        OP_SYS      = 4'hf;
+    localparam [15:0] SYS_CLEAR_RX = 16'hf000, SYS_RETURN = 16'hf200;
+    // SYS address-bearing instructions use bits [5:0] as their target.
+    localparam [5:0] SYS_CALL_GROUP = 6'b000100,
+                     SYS_START_CTX_GROUP = 6'b001100;
+
+    // Shared 64-word instruction store: 1024 data bits plus validity state.
+    // An RTL array is not a hard SRAM macro; generic synthesis maps this to FFs.
     reg [15:0] program_mem [0:63];
     reg [63:0] program_valid;
+    // Private state for two hardware threads, not two execution units.
+    // context_id selects the only thread that can execute on this clock edge.
     reg [5:0] pc [0:1];
     reg [11:0] wait_left [0:1];
     reg [7:0] pin_meta, pin_sync;
@@ -37,8 +64,11 @@ module protocol_engine (
     // Registered per context: a waiting context never blocks its sibling.
     assign stalled = rst_n && run && !fault && (|waiting_pin);
 
-    // Asynchronous protocol pins cross two flip-flops before instructions
-    // observe them. Firmware must budget synchronization and sampling latency.
+    // There is only one internal clock. External protocol pins need not meet
+    // its setup/hold times (e.g. UART from the independently clocked Uno).
+    // This is asynchronous-input synchronization, not a crossing between the
+    // contexts. Both stages run on clk every cycle, even in two-context mode.
+    // Independent bit synchronizers do not make an asynchronous bus atomic.
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             pin_meta <= 0;
@@ -113,12 +143,12 @@ module protocol_engine (
                 pc[context_id] <= pc[context_id] + 1'b1;
                 waiting_pin[context_id] <= 0;
                 case (instruction[15:12])
-                    4'h1: pin_out   <= instruction[7:0];
-                    4'h2: wait_left[context_id] <= instruction[11:0];
-                    4'h3: pin_oe    <= instruction[7:0];
-                    4'h4: pc[context_id] <= instruction[5:0];
-                    4'h5: tx_shift[context_id] <= instruction[7:0];
-                    4'h6: begin
+                    OP_SET: pin_out <= instruction[7:0];
+                    OP_WAIT: wait_left[context_id] <= instruction[11:0];
+                    OP_DIR: pin_oe <= instruction[7:0];
+                    OP_JMP: pc[context_id] <= instruction[5:0];
+                    OP_LOAD_TX: tx_shift[context_id] <= instruction[7:0];
+                    OP_OUT: begin
                         if (instruction[3]) begin
                             // Open drain: bit 0 drives low, bit 1 releases.
                             pin_out[instruction[2:0]] <= 0;
@@ -127,37 +157,37 @@ module protocol_engine (
                         tx_shift[context_id] <= instruction[4] ?
                                     {tx_shift[context_id][6:0], 1'b0} : {1'b0, tx_shift[context_id][7:1]};
                     end
-                    4'h7: rx_shift[context_id] <= instruction[4] ?
+                    OP_IN: rx_shift[context_id] <= instruction[4] ?
                                      {rx_shift[context_id][6:0], sampled_pin} :
                                      {sampled_pin, rx_shift[context_id][7:1]};
-                    4'h8: loop_count[context_id] <= instruction[7:0];
-                    4'h9: begin
+                    OP_COUNT: loop_count[context_id] <= instruction[7:0];
+                    OP_LOOP: begin
                         if (loop_count[context_id] > 1) begin
                             loop_count[context_id] <= loop_count[context_id] - 1'b1;
                             pc[context_id] <= instruction[5:0];
                         end else loop_count[context_id] <= 0;
                     end
-                    4'ha: if (sampled_pin != instruction[3]) begin
+                    OP_WAIT_PIN: if (sampled_pin != instruction[3]) begin
                         pc[context_id] <= pc[context_id];
                         waiting_pin[context_id] <= 1;
                     end
-                    4'hb: if (sampled_pin == instruction[3]) pc[context_id] <= instruction[9:4];
-                    4'hc: pin_out[instruction[2:0]] <= instruction[3];
-                    4'hd: pin_oe[instruction[2:0]] <= instruction[3];
-                    4'he: begin
+                    OP_JMP_PIN: if (sampled_pin == instruction[3]) pc[context_id] <= instruction[9:4];
+                    OP_SET_PIN: pin_out[instruction[2:0]] <= instruction[3];
+                    OP_DIR_PIN: pin_oe[instruction[2:0]] <= instruction[3];
+                    OP_CAPTURE: begin
                         sample_data <= rx_shift[context_id];
                         sample_toggle <= !sample_toggle;
                     end
-                    4'hf: begin
-                        if (instruction == 16'hf000) rx_shift[context_id] <= 0;
-                        else if ((instruction[11:6] == 6'b000100) && !return_valid[context_id]) begin
+                    OP_SYS: begin
+                        if (instruction == SYS_CLEAR_RX) rx_shift[context_id] <= 0;
+                        else if ((instruction[11:6] == SYS_CALL_GROUP) && !return_valid[context_id]) begin
                             return_pc[context_id] <= pc[context_id] + 1'b1;
                             return_valid[context_id] <= 1;
                             pc[context_id] <= instruction[5:0];
-                        end else if ((instruction == 16'hf200) && return_valid[context_id]) begin
+                        end else if ((instruction == SYS_RETURN) && return_valid[context_id]) begin
                             pc[context_id] <= return_pc[context_id];
                             return_valid[context_id] <= 0;
-                        end else if ((instruction[11:6] == 6'b001100) && !dual_active) begin
+                        end else if ((instruction[11:6] == SYS_START_CTX_GROUP) && !dual_active) begin
                             // F300 | address: start context 1 once per RUN.
                             // Other child registers are already zero from HALT.
                             pc[1] <= instruction[5:0];

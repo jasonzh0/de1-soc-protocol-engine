@@ -56,6 +56,15 @@ clocks, so one waiting for input cannot jitter the other's output timing.
 At 50 MHz, dual-context firmware therefore has a 25 MHz tick rate. WAIT 0 takes
 one tick, not zero. Both-waiting contexts still retain this schedule.
 
+This is **interleaved execution**, not two instructions executing in parallel:
+after START_CTX the schedule is `child, parent, child, parent, ...`. Both are
+clocked by the same 50 MHz clock; 25 million context ticks/second is an execution
+rate, not a second clock domain. UART TX and RX overlap in real time because
+each keeps its own progress while the other executes or waits. The tradeoff is
+half the instruction bandwidth per context in exchange for a shared execution
+unit and one instruction read per clock. The area saving versus two units has
+not been measured in CMOS5L. Stealing idle slots would break fixed tick timing.
+
 START_CTX is permitted only once per RUN. A later attempt from either context
 faults. HALT/reset disables the child and restores single-context scheduling.
 The context count is intentionally bounded at two; there is no stack of contexts

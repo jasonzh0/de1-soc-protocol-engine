@@ -90,6 +90,70 @@ synchronous SRAM is not a drop-in replacement: it changes fetch scheduling.
 Keep storage internal until a real FPGA/ASIC implementation difference requires
 a separate module, then document the latency contract explicitly.
 
+## One clock, two contexts, asynchronous external pins
+
+There is one execution unit with two sets of thread state, not two parallel
+execution units. The scheduler alternates them on the same clock. At 50 MHz,
+each active context gets an execution opportunity every 40 ns; the clock still
+has a 20 ns period. Output registers retain their values between instructions,
+so firmware can transmit and receive concurrently without issuing two
+instructions on one edge. This saves duplicated execution resources in intent,
+but mux/scheduling overhead and the actual area tradeoff require mapped results.
+
+True parallel issue would also need two instruction fetches (or buffered
+instructions) and rules for simultaneous pin/result writes. It is an ISA/timing
+and memory-interface change, not a scheduler toggle. Keep the current deterministic
+schedule until throughput requirements and area measurements justify changing it.
+
+The two input flip-flops per protocol pin serve a different purpose: a remote
+UART transmitter, switches, and externally driven bus signals need not meet
+setup/hold against our clock. They synchronize asynchronous inputs into that
+single internal domain. They are not context-to-context synchronizers. Keep
+inter-stage paths timed; the Quartus constraints cut only asynchronous pin paths
+to the first stage. See [Intel's synchronizer guidance](https://www.intel.com/content/www/us/en/docs/programmable/683068/18-1/metastability-analysis.html).
+
+The Tiny Tapeout **host command bus** instead has an explicitly synchronous
+interface and no CDC adapter. Independent bit synchronizers would not make
+that command bus coherent. An asynchronous host would need a separate, defined
+transfer protocol. Firmware must also budget protocol-input synchronization
+latency; synchronizers are not a substitute for external bus timing analysis.
+
+## Area and program-memory gate before tapeout
+
+The store is **64 x 16-bit instruction words = 128 bytes**, not 64 general-purpose
+registers and not 64 words per context. Both contexts share it. The duplex UART
+image occupies addresses 0 through 43 including padding; the I2C-read image uses
+47 words. These examples fit, but richer protocol state machines may not.
+
+Generic `synth -noabc` currently maps the program data to 1,024 enabled flip-flops;
+the core also has 64 validity bits, thread state and substantial mux logic. This
+is a structural warning, not a foundry-cell area estimate or evidence of 6x4 fit.
+The FPGA-only boot ROMs are excluded from ASIC sources.
+
+Next physical-design checks, before committing to a memory architecture:
+
+1. Measure the current design with the exact CMOS5L flow/PDK: mapped cell area,
+   placed utilization, routing and timing. CI remains paused; generic synthesis
+   alone cannot settle the area question.
+2. Identify a hard SRAM supported by that flow, including simulation model,
+   Liberty timing, LEF/GDS, supply connections, metal-stack compatibility and
+   placement/PDN clearances. Tiny Tapeout documents IHP SRAM options but warns
+   integration is nontrivial; its SG13G2 table is not a CMOS5L fit guarantee.
+   See [Tiny Tapeout memory guidance](https://www.tinytapeout.com/specs/memory/).
+3. Compare total placed cost, not just bits: macro + read controller + validity
+   mechanism + execution logic. At only 128 bytes, macro minimum size and
+   peripheral overhead matter; more SRAM capacity may be useful nonetheless.
+4. Design synchronous fetch around the chosen read latency. Alternating contexts
+   may allow fetch/execute overlap, but branches, waits, reset, start-up and
+   single-context mode need explicit treatment and cycle-level tests. Do not
+   merely change the Verilog array and assume SRAM inference or preserved timing.
+5. If capacity grows, update PC widths, branch/call encodings, host addressing,
+   validity handling and firmware together. Current six-bit targets cannot reach
+   a larger memory just by increasing its array depth.
+
+No hard SRAM has been integrated or physical fit established. Named opcode
+constants in the core are a readability change, not an area optimization.
+
 ## Verification and source lists
 
 `make test-fpga` exercises the actual Quartus top: six configurations, simultaneous UART

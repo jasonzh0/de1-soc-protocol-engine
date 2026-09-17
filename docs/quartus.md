@@ -71,7 +71,9 @@ before asserting RUN. The ASIC does not contain these boot ROMs.
 See [firmware configuration](../firmware/README.md). The boot adapter's ROM
 lengths must be updated if a program gains/loses instructions. All supplied
 firmware assumes a 50 MHz physical clock. Duplex firmware uses two contexts,
-each scheduled at 25 MHz; the Uno profile changes instruction counts, not clocks.
+each scheduled once every two clocks (25 million context ticks/second).
+There is still only one 50 MHz clock domain; the Uno profile changes instruction
+counts, not clocks.
 The loader waits four clocks for synchronized
 mode inputs and loads a word per clock; it is not an asynchronous UART receiver.
 
