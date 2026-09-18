@@ -4,7 +4,7 @@ SIM ?= icarus
 FST ?= -fst
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(CURDIR)/../src
-PROJECT_SOURCES = protocol_engine.v program_loader.v tt_um_jasonzh0_protocol_engine.v
+PROJECT_SOURCES = protocol_engine.v program_store.v program_loader.v tt_um_jasonzh0_protocol_engine.v
 
 ifneq ($(GATES),yes)
 SIM_BUILD = sim_build/rtl

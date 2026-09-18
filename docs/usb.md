@@ -24,8 +24,10 @@ The C++ image builder is a small label resolver; no Python library is required.
   report requests, reset and malformed-packet recovery.
 - No physical USB enumeration, Quartus timing closure, USB certification,
   foundry mapping or 6x4-tile fit has been demonstrated for this profile.
-  Program storage is asynchronous-read RTL, **not an integrated SRAM**. Do not
-  infer an area improvement from the larger memory declaration.
+  The USB FPGA project now uses clocked RAM; an explicit IHP SRAM-backed ASIC
+  candidate is model-tested and preliminarily mapped, but not physically
+  integrated. See the [SRAM redesign](sram-redesign.md) for the new area results
+  and readiness/startup contract. Scratch remains registers.
 
 This is a deliberately limited device implementation: endpoint 0 control and
 endpoint 1 interrupt-IN, eight-byte packets, no strings, no other endpoint types,
@@ -164,13 +166,15 @@ SETUP is now parsed before ACK, ACK dispatch has a short path, and reception
 returns at the EOP J edge. Keep minimum-gap tests when changing instruction
 timing, firmware layout or sampler behavior.
 
-Before ASIC USB support: measure the extension's mapped area, choose a CMOS5L
-memory implementation, define synchronous-fetch timing if SRAM is used, update
-the external loader/addressing, close timing with the chosen PHY, and run USB
-compliance/host interoperability tests. Do not enable this FPGA memory profile
-in `info.yaml` and assume it fits. CI remains paused.
+The [SRAM redesign](sram-redesign.md) implements the clocked program store and
+widened loader. Before selecting it for ASIC submission, close macro placement,
+power and timing, then validate the chosen PHY and USB compliance/interoperability.
+Do not enable the new profile in the physical flow and assume it fits. CI remains paused.
 
-## Recorded local verification (2026-09-18)
+## Original asynchronous-profile verification (2026-09-18)
+
+The following records the original profile before the SRAM redesign; see its
+linked report for the new clocked-memory tests and mapped area.
 
 Passed: `make test`, `make test-usb`, `make test-usb-board`, template Cocotb RTL
 test, template metadata/paused-workflow check, and Yosys generic synthesis/check

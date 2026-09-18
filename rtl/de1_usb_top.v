@@ -16,7 +16,7 @@ module de1_usb_top #(
     reg [1:0] reset_sync;
     wire rst_n = reset_sync[1];
     reg [1:0] attach_meta, attach_sync;
-    wire boot_run, prog_we, fault, sample_toggle, stalled;
+    wire boot_run, prog_we, fault, sample_toggle, stalled, program_ready;
     wire [10:0] prog_addr;
     wire [15:0] prog_data;
     wire [7:0] pin_out, pin_oe, sample_data;
@@ -49,15 +49,16 @@ module de1_usb_top #(
         end
     end
     usb_firmware_bootloader #(.IMAGE_FILE(IMAGE_FILE)) boot (
-        .clk(CLOCK_50), .rst_n(rst_n), .run(boot_run), .prog_we(prog_we),
+        .clk(CLOCK_50), .rst_n(rst_n), .program_ready(program_ready), .run(boot_run), .prog_we(prog_we),
         .prog_addr(prog_addr), .prog_data(prog_data)
     );
-    protocol_engine #(.PROGRAM_ADDR_WIDTH(11), .EXTENDED_ISA(1)) engine (
+    protocol_engine #(.PROGRAM_ADDR_WIDTH(11), .EXTENDED_ISA(1), .PROGRAM_MEMORY(1)) engine (
         .clk(CLOCK_50), .rst_n(rst_n), .run(run), .prog_we(prog_we),
         .prog_addr(prog_addr), .prog_data(prog_data),
         .pin_in({!KEY[0], 5'b0, GPIO_0[1:0]}),
         .pin_out(pin_out), .pin_oe(pin_oe), .fault(fault),
-        .sample_data(sample_data), .sample_toggle(sample_toggle), .stalled(stalled)
+        .sample_data(sample_data), .sample_toggle(sample_toggle), .stalled(stalled),
+        .program_ready(program_ready)
     );
     assign GPIO_0[1:0] = 2'bzz; // PHY VP, VM (received D+, D-)
     assign GPIO_0[2] = pin_out[0]; // PHY VPO

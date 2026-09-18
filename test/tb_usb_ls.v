@@ -3,6 +3,9 @@
 // Independent low-speed host BFM. Exercises the real programmable core through
 // its public loading and pin interfaces. No private firmware state assertions.
 module tb_usb_ls;
+`ifndef PROGRAM_MEMORY
+`define PROGRAM_MEMORY 0
+`endif
     reg clk=0, rst_n=0, run=0, prog_we=0;
     reg [10:0] prog_addr=0;
     reg [15:0] prog_data=0;
@@ -11,6 +14,7 @@ module tb_usb_ls;
     reg [1:0] host_line=2;
     wire [7:0] pin_in, pin_out, pin_oe, sample_data;
     wire fault, sample_toggle, stalled;
+    wire program_ready;
     wire [1:0] bus_line = host_drive ? host_line : ((pin_oe[1:0] == 3) ? pin_out[1:0] : 2'b10);
     assign pin_in = {key_pressed, 5'b0, bus_line};
     always #10 clk=!clk;
@@ -36,16 +40,39 @@ module tb_usb_ls;
     assign sample_toggle=leds[6];
     assign fault=leds[1];
     assign stalled=0;
+    assign program_ready=1;
     always @(posedge clk) if(rst_n && run) begin
         if(safe_gpio[4]!==1 || safe_gpio[5]!==0) $fatal(1,"Default build attached or drove USB");
         if(gpio[7]!==0 || gpio[8]!==0) $fatal(1,"PHY mode outputs");
     end
+`elsif USB_TT_TEST
+    reg [7:0] host_ui=0;
+    reg reading_sample=0;
+    wire [7:0] tt_status;
+    tt_um_jasonzh0_protocol_engine #(.PROGRAM_ADDR_WIDTH(11), .EXTENDED_ISA(1),
+        .PROGRAM_MEMORY(`PROGRAM_MEMORY)) dut (
+        .clk(clk), .rst_n(rst_n), .ena(1'b1), .ui_in(host_ui), .uo_out(tt_status),
+        .uio_in(pin_in), .uio_out(pin_out), .uio_oe(pin_oe)
+    );
+    assign fault=reading_sample ? 1'b0 : tt_status[1];
+    assign stalled=reading_sample ? 1'b0 : tt_status[6];
+    assign sample_toggle=reading_sample ? 1'b0 : tt_status[5];
+    assign sample_data=tt_status;
+    assign program_ready=!tt_status[7];
+    task host_command(input [2:0] op, input [3:0] data);
+        begin
+            @(negedge clk); host_ui={1'b0,op,data};
+            if(op==6) reading_sample=data[0];
+            @(negedge clk); host_ui[7]=1; @(negedge clk); host_ui[7]=0;
+            @(negedge clk);
+        end
+    endtask
 `else
-    protocol_engine #(.PROGRAM_ADDR_WIDTH(11), .EXTENDED_ISA(1)) dut (
+    protocol_engine #(.PROGRAM_ADDR_WIDTH(11), .EXTENDED_ISA(1), .PROGRAM_MEMORY(`PROGRAM_MEMORY)) dut (
         .clk(clk), .rst_n(rst_n), .run(run), .prog_we(prog_we),
         .prog_addr(prog_addr), .prog_data(prog_data), .pin_in(pin_in),
         .pin_out(pin_out), .pin_oe(pin_oe), .sample_data(sample_data),
-        .sample_toggle(sample_toggle), .fault(fault), .stalled(stalled)
+        .sample_toggle(sample_toggle), .fault(fault), .stalled(stalled), .program_ready(program_ready)
     );
 `endif
     always @(posedge clk) if (rst_n && run) begin
@@ -81,6 +108,17 @@ module tb_usb_ls;
                 end
             host_line=0; #(2*host_bit_ns); host_line=2; host_eop_end=$time;
             #(host_bit_ns); host_drive=0;
+        end
+    endtask
+    task check_configuration(input [7:0] value);
+        begin
+`ifdef USB_TT_TEST
+            host_command(6,1);
+`endif
+            if(sample_data!==value) $fatal(1,"Configuration result %h expected %h",sample_data,value);
+`ifdef USB_TT_TEST
+            host_command(6,0);
+`endif
         end
     endtask
     task token(input [7:0] pid, input [6:0] address, input [3:0] endpoint);
@@ -186,9 +224,20 @@ module tb_usb_ls;
     initial begin
         if ($value$plusargs("HOST_BIT_NS=%d",host_bit_ns)) begin end
         $readmemh("build/usb_ls.hex",program_image);
-        repeat(4) @(negedge clk); rst_n=1;
+        repeat(4) @(negedge clk); rst_n=1; @(negedge clk);
+        wait(program_ready); @(negedge clk);
+`ifdef USB_TT_TEST
+        // Auto-increment crosses 0x0ff/0x100 and 0x3ff/0x400 via the real loader.
+        for(i=0;i<2048;i=i+1) begin
+            host_command(3,program_image[i][15:12]); host_command(3,program_image[i][11:8]);
+            host_command(3,program_image[i][7:4]); host_command(3,program_image[i][3:0]); host_command(4,0);
+            if(tt_status[2]) $fatal(1,"TT image loading error at %0d",i);
+        end
+        host_command(5,0); run=1;
+`else
         for(i=0;i<2048;i=i+1) begin @(negedge clk); prog_we=1; prog_addr=i; prog_data=program_image[i]; end
         @(negedge clk); prog_we=0; @(negedge clk); run=1;
+`endif
 `ifdef USB_BOARD_TEST
         wait(gpio[5]===1);
 `endif
@@ -225,7 +274,7 @@ module tb_usb_ls;
         for(i=0;i<8;i=i+1) begin in_data(5,0,(i%2==0)?8'h4b:8'hc3,(i==7)?7:8); ack(); end
         status_out(5);
         setup_request(5,0,9,1,0,0); in_data(5,0,8'h4b,0); ack();
-        if(sample_data!==1) $fatal(1,"Configuration not published");
+        check_configuration(1);
         fork token(8'h69,5,1); expect_handshake(8'h5a); join
         key_pressed=1; #(host_bit_ns); in_data(5,1,8'hc3,8);
         if(device_bytes[4]!==4) $fatal(1,"Missing keyboard usage A");
@@ -259,7 +308,7 @@ module tb_usb_ls;
         fork token(8'h69,5,0); expect_handshake(8'h1e); join
         // Bus reset removes the assigned address and configuration.
         #2000; host_drive=1; host_line=0; #20000; host_line=2; #5000; host_drive=0;
-        if(sample_data!==0) $fatal(1,"Reset did not unconfigure");
+        check_configuration(0);
         token(8'h69,5,1); no_response();
         setup_request(0,8'h80,6,16'h0100,0,8); in_data(0,0,8'h4b,8); ack(); status_out(0);
 `ifdef USB_BOARD_TEST

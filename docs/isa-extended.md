@@ -25,8 +25,10 @@ This is an experimental encoding, not a frozen ASIC ABI.
 - HALT/reset clears ALU, timing, CRC and serial state; HALT retains the published
   result as before. Program validity resets with reset, not HALT. Scratch bytes
   are **not reset**, and firmware must initialize them before use. Unwritten
-  instructions and unsupported encodings still fault. Memory reads remain
-  asynchronous; this is not synchronous SRAM inference.
+  instructions and unsupported encodings still fault. The default memory backend
+  is asynchronous; the [synchronous/SRAM profile](sram-redesign.md) substitutes
+  reset-time zero scrubbing for validity bits, gates loading with program_ready,
+  and adds one prefetch clock to RUN without changing steady-state ISA timing.
 
 State: byte accumulator `A`, byte index `I`, 256 scratch bytes `M`, zero flag `Z`,
 carry/borrow flag `C`. Byte/index arithmetic wraps modulo 256. Comparisons leave
@@ -139,5 +141,6 @@ otherwise falls through. A following full-width JMP makes a conditional branch.
 
 Non-USB regression: `make test-extended`. Integrated protocol/timer/serial
 regression: `make test-usb`. Default profile regressions remain `make test` and
-the Tiny Tapeout template harness. The FPGA USB adapter/source lists are separate
-from `info.yaml`; no new ASIC source files or top-level ports were added.
+the Tiny Tapeout template harness. The FPGA USB adapters remain separate from
+`info.yaml`. The internal program_store module is shared; physical TT ports are
+unchanged and the submission defaults still disable the extension.

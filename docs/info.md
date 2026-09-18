@@ -1,5 +1,9 @@
 # Programmable protocol engine
 
+This datasheet describes the default 64-word submission profile. The opt-in
+[SRAM candidate](sram-redesign.md) adds wider addressing, initialization-busy
+status and a clocked program store while retaining the same physical ports.
+
 ## How it works
 
 A 64-word, 16-bit programmable engine reads and drives eight pins. Timing,

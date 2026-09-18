@@ -1,0 +1,13 @@
+# Preliminary mapped SRAM candidate, not a physical-flow configuration.
+# First: bash scripts/fetch_ihp_sram.sh
+read_liberty -lib build/ihp-sram/sg13cmos5l_stdcell_typ_1p20V_25C.lib
+read_liberty -lib build/ihp-sram/RM_IHPSG13_1P_1024x32_c2_bm_bist_typ_1p20V_25C.lib
+read_verilog src/protocol_engine.v src/program_store.v src/program_loader.v src/tt_um_jasonzh0_protocol_engine.v
+chparam -set PROGRAM_ADDR_WIDTH 11 -set EXTENDED_ISA 1 -set PROGRAM_MEMORY 2 tt_um_jasonzh0_protocol_engine
+synth -top tt_um_jasonzh0_protocol_engine -flatten -noabc
+dfflibmap -liberty build/ihp-sram/sg13cmos5l_stdcell_typ_1p20V_25C.lib
+abc -liberty build/ihp-sram/sg13cmos5l_stdcell_typ_1p20V_25C.lib
+clean
+check -assert
+stat -liberty build/ihp-sram/sg13cmos5l_stdcell_typ_1p20V_25C.lib -liberty build/ihp-sram/RM_IHPSG13_1P_1024x32_c2_bm_bist_typ_1p20V_25C.lib
+write_verilog -noattr -noexpr build/asic_sram_mapped.v

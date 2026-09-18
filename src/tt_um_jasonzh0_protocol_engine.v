@@ -5,8 +5,15 @@
 // ui_in = {strobe, command[2:0], data[3:0]}.
 // A sampled low-to-high strobe transition executes exactly one command.
 // Command 0 HALT, 1 ADDR_LO, 2 ADDR_HI, 3 DATA, 4 WRITE, 5 RUN,
-// 6 READ_SELECT (0=status, 1=last captured byte); 7 invalid.
-module tt_um_jasonzh0_protocol_engine (
+// 6 READ_SELECT (0=status, 1=last captured byte).
+// Command 7 is ADDR_BANK only for address widths above 8; invalid by default.
+// Status bit 7 reports memory initialization busy (always zero after reset for
+// the default asynchronous backend). Physical ports remain template-standard.
+module tt_um_jasonzh0_protocol_engine #(
+    parameter PROGRAM_ADDR_WIDTH = 6,
+    parameter EXTENDED_ISA = 0,
+    parameter PROGRAM_MEMORY = 0
+) (
     input  wire [7:0] ui_in,
     output wire [7:0] uo_out,
     input  wire [7:0] uio_in,
@@ -22,7 +29,8 @@ module tt_um_jasonzh0_protocol_engine (
     reg read_error;
     wire running;
     wire loader_error;
-    wire [5:0] write_addr;
+    wire [PROGRAM_ADDR_WIDTH-1:0] write_addr;
+    wire program_ready;
     wire [15:0] write_word;
     wire word_ready;
     wire write_accept;
@@ -63,26 +71,29 @@ module tt_um_jasonzh0_protocol_engine (
         end
     end
 
-    program_loader loader (
+    program_loader #(.PROGRAM_ADDR_WIDTH(PROGRAM_ADDR_WIDTH)) loader (
         .clk(clk), .rst_n(rst_n), .enable(ena),
         .command_valid(command_event && (ui_in[6:4] != 6)),
+        .program_ready(program_ready),
         .command(ui_in[6:4]), .data(ui_in[3:0]),
         .run(running), .prog_we(write_accept), .prog_addr(write_addr),
         .prog_data(write_word), .word_ready(word_ready), .error(loader_error)
     );
 
-    protocol_engine core (
+    protocol_engine #(.PROGRAM_ADDR_WIDTH(PROGRAM_ADDR_WIDTH),
+                      .EXTENDED_ISA(EXTENDED_ISA), .PROGRAM_MEMORY(PROGRAM_MEMORY)) core (
         .clk(clk), .rst_n(rst_n), .run(core_run),
         .prog_we(write_accept), .prog_addr(write_addr), .prog_data(write_word),
         .pin_in(uio_in), .pin_out(pin_out), .pin_oe(pin_oe), .fault(core_fault),
-        .sample_data(sample_data), .sample_toggle(sample_toggle), .stalled(stalled)
+        .sample_data(sample_data), .sample_toggle(sample_toggle), .stalled(stalled),
+        .program_ready(program_ready)
     );
 
     // Bidirectional pad cells / FPGA I/O buffers implement the actual tri-state.
     assign uio_out = pin_out;
     assign uio_oe = (rst_n && ena && running && !core_fault) ? pin_oe : 8'b0;
     assign uo_out = (rst_n && ena) ? (read_sample ? sample_data :
-                    {1'b0, stalled, sample_toggle, ack, word_ready,
+                    {!program_ready, stalled, sample_toggle, ack, word_ready,
                      (loader_error || read_error), core_fault,
                      (running && !core_fault)}) : 8'b0;
 endmodule

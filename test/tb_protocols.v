@@ -4,6 +4,9 @@
 // Firmware is loaded over public TT pins. External peer models independently
 // decode UART/SPI/I2C signals; no private DUT state is read or written.
 module tb_protocols;
+`ifndef PROGRAM_MEMORY
+`define PROGRAM_MEMORY 0
+`endif
     reg clk = 0, rst_n = 1, ena = 1;
     reg [7:0] ui = 0;
     wire [7:0] status, pin_out, pin_oe;
@@ -25,7 +28,8 @@ module tb_protocols;
     assign pads[1] = uart_duplex_mode ? serial_rx : 1'bz;
     always #10 clk = !clk;
 
-    tt_um_jasonzh0_protocol_engine dut (
+    tt_um_jasonzh0_protocol_engine #(.PROGRAM_MEMORY(`PROGRAM_MEMORY),
+        .PROGRAM_ADDR_WIDTH(`PROGRAM_MEMORY == 2 ? 11 : 6)) dut (
         .clk(clk), .rst_n(rst_n), .ena(ena), .ui_in(ui), .uo_out(status),
         .uio_in(pads), .uio_out(pin_out), .uio_oe(pin_oe)
     );
@@ -50,6 +54,7 @@ module tb_protocols;
             if (pin_oe !== 0) $fatal(1, "Reset must release pins");
             @(negedge clk); rst_n = 1;
             clocks(4);
+            while (status[7]) clocks(1);
         end
     endtask
 

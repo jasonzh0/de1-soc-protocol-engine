@@ -10,6 +10,7 @@ project:
   top_module: "tt_um_jasonzh0_protocol_engine"
   source_files:
     - "protocol_engine.v"
+    - "program_store.v"
     - "program_loader.v"
     - "tt_um_jasonzh0_protocol_engine.v"
 pinout:

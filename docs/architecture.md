@@ -24,7 +24,8 @@ Tiny Tapeout pins                                    v
 
 | Module / files | Owns | Must not own |
 | --- | --- | --- |
-| `src/protocol_engine.v` | ISA, shared memory, optional two-context scheduling, private context state, pins/capture/timing/faults | Board pins, protocol-specific logic, host encoding, vendor primitives |
+| `src/protocol_engine.v` | ISA, fetch/PC selection, optional two-context scheduling, private context state, pins/capture/timing/faults | Board pins, protocol-specific logic, host encoding, vendor primitives |
+| `src/program_store.v` | Program storage, synchronous packing, initialization, IHP macro adapter | Instruction decode, protocol behavior, host commands |
 | `src/program_loader.v` | Address/data staging, host commands, run control, loader errors | Pad names, clocks derived from host strobes, instruction execution |
 | `src/tt_um_jasonzh0_protocol_engine.v` | TT ports, strobe detection, status/result selection, output-enable gating | ISA logic, vendor I/O buffers |
 | `firmware/` | Protocol-specific instruction sequences and basic configurations | Fixed-function protocol hardware or host transport |
@@ -48,7 +49,8 @@ those commands, or drives the core's word-write interface directly.
 - Active-low reset asserts asynchronously; the caller must release it with
   proper clock timing. The DE1 wrapper supplies a reset synchronizer.
 - With `run=0`, `prog_we=1` writes one 16-bit word at `prog_addr` on that edge.
-  Programming while running is ignored. The write port has no backpressure.
+  Programming while running is ignored. For clocked-memory profiles wait for
+  `program_ready` after reset before writing; the default is immediately ready.
 - Keep `run=0` during the final write edge; assert run on a later edge.
 - Taking `run` low restarts PC/wait/output/fault state; it is a restart, not a
   resumable pause. Program words and validity survive a halt.
@@ -85,10 +87,11 @@ single-master I2C read/write. FIFO streaming,
 UART program upload and a Python compiler/library are deferred, not hidden
 dependencies. Keep a future uploader separate from protocol-pin execution.
 
-The current asynchronous instruction read is part of the timing design. A
-synchronous SRAM is not a drop-in replacement: it changes fetch scheduling.
-Keep storage internal until a real FPGA/ASIC implementation difference requires
-a separate module, then document the latency contract explicitly.
+The default asynchronous instruction read retains its original timing. The
+[SRAM redesign](sram-redesign.md) adds a real internal storage seam: clocked FPGA
+RAM and the IHP macro share a prefetch contract, including one extra RUN startup
+clock and unchanged steady-state issue timing. Storage and initialization live
+in `program_store`, while PC selection remains a single implementation in the core.
 
 ## One clock, two contexts, asynchronous external pins
 
@@ -130,7 +133,7 @@ the core also has 64 validity bits, thread state and substantial mux logic. This
 is a structural warning, not a foundry-cell area estimate or evidence of 6x4 fit.
 The FPGA-only boot ROMs are excluded from ASIC sources.
 
-Next physical-design checks, before committing to a memory architecture:
+The initial evaluation and remaining physical-design checks:
 
 1. Measure the current design with the exact CMOS5L flow/PDK: mapped cell area,
    placed utilization, routing and timing. CI remains paused; generic synthesis
@@ -151,8 +154,10 @@ Next physical-design checks, before committing to a memory architecture:
    validity handling and firmware together. Current six-bit targets cannot reach
    a larger memory just by increasing its array depth.
 
-No hard SRAM has been integrated or physical fit established. Named opcode
-constants in the core are a readability change, not an area optimization.
+An explicit IHP SRAM candidate is now RTL-integrated, model-tested and
+technology-mapped; it is not yet physically integrated or the submission default.
+See [measured redesign results](sram-redesign.md). The original evaluation is
+retained in [ASIC memory evaluation](asic-memory-evaluation.md).
 
 ## Verification and source lists
 
@@ -193,9 +198,10 @@ controls. `quartus/de1_soc_usb.qpf` owns the separate source/timing configuratio
 These files are not part of `info.yaml`. The existing board project and ASIC
 wrapper retain their 64-word defaults and unchanged loader interface.
 
-The wider asynchronous store and scratch RAM are not hard SRAMs. Physical fit,
-memory/fetch redesign and host-loader expansion are prerequisites to enabling
-USB on the ASIC. This FPGA-first profile must not be described as fitting 6x4.
+The USB FPGA top uses the clocked program store. An opt-in ASIC profile selects
+the IHP macro and wide host loader; scratch remains a register array. Physical
+integration and timing closure are still prerequisites to selecting it as the
+submission default. The preliminary cell+macro area is not proof of 6x4 routed fit.
 
 ## Active FPGA boot contract
 

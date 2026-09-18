@@ -2,19 +2,23 @@
 `default_nettype none
 // Non-USB programs verify reusable extension semantics through public ports.
 module tb_extended_isa;
+`ifndef PROGRAM_MEMORY
+`define PROGRAM_MEMORY 0
+`endif
     reg clk=0, rst_n=0, run=0, prog_we=0;
     reg [10:0] prog_addr=0;
     reg [15:0] prog_data=0;
     wire [7:0] pin_out, pin_oe, sample_data;
     wire fault, sample_toggle, stalled;
+    wire program_ready;
     wire default_fault;
     wire [7:0] default_oe;
     integer address=0;
     always #10 clk=!clk;
-    protocol_engine #(.PROGRAM_ADDR_WIDTH(11), .EXTENDED_ISA(1), .CLOCK_HZ(50000000)) dut (
+    protocol_engine #(.PROGRAM_ADDR_WIDTH(11), .EXTENDED_ISA(1), .PROGRAM_MEMORY(`PROGRAM_MEMORY), .CLOCK_HZ(50000000)) dut (
         .clk(clk), .rst_n(rst_n), .run(run), .prog_we(prog_we), .prog_addr(prog_addr),
         .prog_data(prog_data), .pin_in(8'h5a), .pin_out(pin_out), .pin_oe(pin_oe),
-        .sample_data(sample_data), .sample_toggle(sample_toggle), .fault(fault), .stalled(stalled)
+        .sample_data(sample_data), .sample_toggle(sample_toggle), .fault(fault), .stalled(stalled), .program_ready(program_ready)
     );
     protocol_engine default_profile (
         .clk(clk), .rst_n(rst_n), .run(run), .prog_we(prog_we), .prog_addr(prog_addr[5:0]),
@@ -23,7 +27,8 @@ module tb_extended_isa;
     );
     task reset;
         begin @(negedge clk); rst_n=0; run=0; prog_we=0;
-            repeat(3) @(negedge clk); rst_n=1; address=0; end
+            repeat(3) @(negedge clk); rst_n=1; address=0;
+            wait(program_ready); @(negedge clk); end
     endtask
     task emit(input [15:0] word);
         begin @(negedge clk); prog_we=1; prog_addr=address; prog_data=word; address=address+1; end
@@ -45,7 +50,7 @@ module tb_extended_isa;
         emit(16'h0909); emit(16'h0b00); emit(16'h0100); emit(16'h0a00);
         emit(16'h0800); emit(16'h0f01); emit(16'h0000); // not equal
         emit(16'hf600); // wide call to 512
-        emit(16'h0e18); emit(16'h440e); // publish, self loop at 1038
+        emit(16'h0e18); emit(16'h440f); // publish once, self loop at 1039
         address=512; emit(16'h0e07); emit(16'hf200); // invert FF -> zero, return to high PC
         start(); expect_result(0);
 
@@ -73,6 +78,6 @@ module tb_extended_isa;
         $display("PASS: extended memory/ALU/flags, wide branch/call/return, programmable CRC, index wrap, context/call faults");
         $finish;
     end
-    initial begin #100000; $fatal(1,"Extended ISA test timeout"); end
+    initial begin #500000; $fatal(1,"Extended ISA test timeout"); end
 endmodule
 `default_nettype wire

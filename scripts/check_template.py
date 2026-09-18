@@ -41,7 +41,7 @@ def main():
     qsf = (ROOT / "quartus/de1_soc_demo.qsf").read_text()
     require("-name TOP_LEVEL_ENTITY de1_protocol_top" in qsf, "wrong active Quartus top")
     board_sources = re.findall(r"-name VERILOG_FILE (\S+)", qsf)
-    require(board_sources == ["../src/protocol_engine.v", "../rtl/firmware_bootloader.v",
+    require(board_sources == ["../src/protocol_engine.v", "../src/program_store.v", "../rtl/firmware_bootloader.v",
                               "../rtl/de1_protocol_top.v"], "Quartus source list drift")
     for source in board_sources:
         require((ROOT / "quartus" / source).is_file(), f"missing Quartus source: {source}")

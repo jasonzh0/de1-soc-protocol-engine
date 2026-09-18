@@ -15,6 +15,11 @@ instructions and larger memory. See the [USB guide](docs/usb.md) for simulation,
 `quartus/de1_soc_usb.qpf`, external-PHY requirements and current limitations.
 Physical attachment is disabled by default; this is not yet ASIC USB support.
 
+**SRAM-backed ASIC candidate:** the shared core now supports synchronous program
+memory and an explicit IHP 4 KiB SRAM. The USB FPGA project uses the clocked RAM
+backend; the default submission remains the tested 64-word profile pending
+physical integration. See [SRAM redesign, loader contract and area](docs/sram-redesign.md).
+
 ## Run on DE1-SoC H1
 
 The existing Quartus project now boots the protocol engine, **not the CHUD demo**.

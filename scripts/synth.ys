@@ -1,5 +1,5 @@
 # Generic structural check, not an IHP mapped area/timing result.
-read_verilog src/protocol_engine.v src/program_loader.v src/tt_um_jasonzh0_protocol_engine.v
+read_verilog src/protocol_engine.v src/program_store.v src/program_loader.v src/tt_um_jasonzh0_protocol_engine.v
 hierarchy -check -top tt_um_jasonzh0_protocol_engine
 synth -noabc -top tt_um_jasonzh0_protocol_engine
 check -assert

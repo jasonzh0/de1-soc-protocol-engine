@@ -7,6 +7,7 @@
 // No fixed UART/SPI/I2C execution blocks. Protocols are uploaded firmware.
 module protocol_engine #(
     parameter PROGRAM_ADDR_WIDTH = 6,
+    parameter PROGRAM_MEMORY = 0,
     parameter EXTENDED_ISA = 0,
     parameter CLOCK_HZ = 50000000
 ) (
@@ -22,7 +23,8 @@ module protocol_engine #(
     output reg        fault,
     output reg  [7:0] sample_data,
     output reg        sample_toggle,
-    output wire       stalled
+    output wire       stalled,
+    output wire       program_ready
 );
     // Reject unsupported parameter combinations at elaboration in simulation.
     // Valid configurations remove this generate branch during synthesis.
@@ -53,11 +55,6 @@ module protocol_engine #(
     localparam [5:0] SYS_CALL_GROUP = 6'b000100,
                      SYS_START_CTX_GROUP = 6'b001100;
 
-    // Shared instruction store; default 1024 data bits plus validity state.
-    // An RTL array is not a hard SRAM macro; generic synthesis maps this to FFs.
-    localparam PROGRAM_WORDS = 1 << PROGRAM_ADDR_WIDTH;
-    reg [15:0] program_mem [0:PROGRAM_WORDS-1];
-    reg [PROGRAM_WORDS-1:0] program_valid;
     // Private state for two hardware threads, not two execution units.
     // context_id selects the only thread that can execute on this clock edge.
     reg [PROGRAM_ADDR_WIDTH-1:0] pc [0:1];
@@ -69,6 +66,11 @@ module protocol_engine #(
     reg context_id, dual_active;
     integer c;
     wire [15:0] instruction;
+    wire instruction_valid;
+    reg fetch_primed;
+    reg [PROGRAM_ADDR_WIDTH-1:0] execute_pc_next;
+    reg skip_next;
+    wire execution_ready = program_ready && ((PROGRAM_MEMORY == 0) || fetch_primed);
 
     // Optional single-context byte-processing extension. No packet IDs,
     // descriptors, endpoints or USB state machine live in this datapath.
@@ -108,9 +110,65 @@ module protocol_engine #(
         end
     endfunction
 
-    assign instruction = program_mem[pc[context_id]];
     wire sampled_pin = pin_sync[instruction[2:0]];
     wire shift_bit = instruction[4] ? tx_shift[context_id][7] : tx_shift[context_id][0];
+    wire start_context = (instruction[15:12] == OP_SYS) &&
+                         (instruction[11:6] == SYS_START_CTX_GROUP) && !dual_active;
+    wire [PROGRAM_ADDR_WIDTH-1:0] following_address =
+        !fetch_primed ? pc[context_id] :
+        dual_active ? pc[!context_id] :
+        (start_context && instruction_valid && wait_left[context_id] == 0) ?
+            {{(PROGRAM_ADDR_WIDTH-6){1'b0}}, instruction[5:0]} : execute_pc_next;
+    program_store #(.ADDR_WIDTH(PROGRAM_ADDR_WIDTH), .BACKEND(PROGRAM_MEMORY)) store (
+        .clk(clk), .rst_n(rst_n), .write_en(prog_we && !run),
+        .write_addr(prog_addr), .write_data(prog_data),
+        .read_en(run && !fault),
+        .read_addr(PROGRAM_MEMORY == 0 ? pc[context_id] : following_address),
+        .read_data(instruction), .read_valid(instruction_valid), .ready(program_ready)
+    );
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) fetch_primed <= 0;
+        else if (!run || !program_ready) fetch_primed <= 0;
+        else if (!fault) fetch_primed <= 1;
+    end
+
+    // One source of truth for PC control: the execution register and next SRAM
+    // read both use this value. A clocked store samples the following address
+    // on the same edge that executes the current instruction (no branch bubble).
+    always @* begin
+        skip_next = 0;
+        case (instruction[7:0])
+            0: skip_next = zero_flag; 1: skip_next = !zero_flag;
+            2: skip_next = carry_flag; 3: skip_next = !carry_flag;
+            4: skip_next = serial_count == 8; 5: skip_next = serial_count != 8;
+            6: skip_next = serial_error; 7: skip_next = !serial_error;
+            8: skip_next = insert_bit; 9: skip_next = !insert_bit;
+            10: skip_next = tick_overrun; 11: skip_next = !tick_overrun;
+            12: skip_next = interval_due; 13: skip_next = !interval_due;
+            default: skip_next = 0;
+        endcase
+        execute_pc_next = pc[context_id] + 1'b1;
+        if (wait_left[context_id] != 0) execute_pc_next = pc[context_id];
+        else case (instruction[15:12])
+            0: if (EXTENDED_ISA && !dual_active) begin
+                if (instruction == 16'h0e0f && !tick_pending) execute_pc_next = pc[0];
+                else if (instruction[11:8] == 15 && skip_next) execute_pc_next = pc[0] + 2'd2;
+            end
+            OP_JMP: execute_pc_next = instruction[PROGRAM_ADDR_WIDTH-1:0];
+            OP_LOOP: if (loop_count[context_id] > 1) execute_pc_next = instruction[PROGRAM_ADDR_WIDTH-1:0];
+            OP_WAIT_PIN: if (sampled_pin != instruction[3]) execute_pc_next = pc[context_id];
+            OP_JMP_PIN: if (sampled_pin == instruction[3]) execute_pc_next = instruction[9:4];
+            OP_SYS: begin
+                if (EXTENDED_ISA && !dual_active && instruction[11:10] == 2'b01 && !return_valid[0])
+                    execute_pc_next = instruction[9:0];
+                else if (instruction[11:6] == SYS_CALL_GROUP && !return_valid[context_id])
+                    execute_pc_next = instruction[5:0];
+                else if (instruction == SYS_RETURN && return_valid[context_id])
+                    execute_pc_next = return_pc[context_id];
+            end
+            default: begin end
+        endcase
+    end
     // Registered per context: a waiting context never blocks its sibling.
     assign stalled = rst_n && run && !fault && (|waiting_pin);
 
@@ -127,20 +185,6 @@ module protocol_engine #(
             pin_meta <= pin_in;
             pin_sync <= pin_meta;
         end
-    end
-
-    // Host must halt the engine before writing its program.
-    // Memory bits are not reset. Valid bits prevent executing unwritten words.
-    always @(posedge clk) begin
-        if (rst_n && prog_we && !run)
-            program_mem[prog_addr] <= prog_data;
-    end
-
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n)
-            program_valid <= 0;
-        else if (prog_we && !run)
-            program_valid[prog_addr] <= 1'b1;
     end
 
     always @(posedge clk or negedge rst_n) begin
@@ -197,7 +241,7 @@ module protocol_engine #(
             context_id <= 0;
             dual_active <= 0;
             // A published result survives HALT so the host can read it.
-        end else if (!fault) begin
+        end else if (!fault && execution_ready) begin
             if (EXTENDED_ISA) begin
                 if (millisecond_divider == CLOCK_HZ / 1000 - 1) begin
                     millisecond_divider <= 0;
@@ -220,11 +264,11 @@ module protocol_engine #(
             context_id <= dual_active ? !context_id : 1'b0;
             if (wait_left[context_id] != 0) begin
                 wait_left[context_id] <= wait_left[context_id] - 1'b1;
-            end else if (!program_valid[pc[context_id]]) begin
+            end else if (!instruction_valid) begin
                 fault  <= 1'b1;
                 pin_oe <= 0;
             end else begin
-                pc[context_id] <= pc[context_id] + 1'b1;
+                pc[context_id] <= execute_pc_next;
                 waiting_pin[context_id] <= 0;
                 case (instruction[15:12])
                     4'h0: begin
@@ -279,8 +323,7 @@ module protocol_engine #(
                                 end
                                 'h0e: begin tick_active <= 1; tick_counter <= tick_period - 1'b1; tick_pending <= 0; tick_overrun <= 0; end
                                 'h0f: begin
-                                    if (!tick_pending) pc[0] <= pc[0];
-                                    else begin accumulator <= tick_sample; zero_flag <= (tick_sample == 0); tick_pending <= 0; end
+                                    if (tick_pending) begin accumulator <= tick_sample; zero_flag <= (tick_sample == 0); tick_pending <= 0; end
                                 end
                                 'h10: begin tick_active <= 0; tick_pending <= 0; end
                                 'h11: crc_value[7:0] <= accumulator;
@@ -315,30 +358,14 @@ module protocol_engine #(
                                     end else begin fault <= 1; pin_oe <= 0; end
                                 end
                             endcase
-                            15: case (instruction[7:0])
-                                0: if (zero_flag) pc[0] <= pc[0] + 2'd2;
-                                1: if (!zero_flag) pc[0] <= pc[0] + 2'd2;
-                                2: if (carry_flag) pc[0] <= pc[0] + 2'd2;
-                                3: if (!carry_flag) pc[0] <= pc[0] + 2'd2;
-                                4: if (serial_count == 8) pc[0] <= pc[0] + 2'd2;
-                                5: if (serial_count != 8) pc[0] <= pc[0] + 2'd2;
-                                6: if (serial_error) pc[0] <= pc[0] + 2'd2;
-                                7: if (!serial_error) pc[0] <= pc[0] + 2'd2;
-                                8: if (insert_bit) pc[0] <= pc[0] + 2'd2;
-                                9: if (!insert_bit) pc[0] <= pc[0] + 2'd2;
-                                10: if (tick_overrun) pc[0] <= pc[0] + 2'd2;
-                                11: if (!tick_overrun) pc[0] <= pc[0] + 2'd2;
-                                12: if (interval_due) pc[0] <= pc[0] + 2'd2;
-                                13: if (!interval_due) pc[0] <= pc[0] + 2'd2;
-                                default: begin fault <= 1; pin_oe <= 0; end
-                            endcase
+                            15: if (instruction[7:0] > 13) begin fault <= 1; pin_oe <= 0; end
                             default: begin fault <= 1; pin_oe <= 0; end
                         endcase
                     end
                     OP_SET: pin_out <= instruction[7:0];
                     OP_WAIT: wait_left[context_id] <= instruction[11:0];
                     OP_DIR: pin_oe <= instruction[7:0];
-                    OP_JMP: pc[context_id] <= instruction[PROGRAM_ADDR_WIDTH-1:0];
+                    OP_JMP: begin end // PC control is shared with fetch above.
                     OP_LOAD_TX: tx_shift[context_id] <= instruction[7:0];
                     OP_OUT: begin
                         if (instruction[3]) begin
@@ -356,14 +383,12 @@ module protocol_engine #(
                     OP_LOOP: begin
                         if (loop_count[context_id] > 1) begin
                             loop_count[context_id] <= loop_count[context_id] - 1'b1;
-                            pc[context_id] <= instruction[PROGRAM_ADDR_WIDTH-1:0];
                         end else loop_count[context_id] <= 0;
                     end
                     OP_WAIT_PIN: if (sampled_pin != instruction[3]) begin
-                        pc[context_id] <= pc[context_id];
                         waiting_pin[context_id] <= 1;
                     end
-                    OP_JMP_PIN: if (sampled_pin == instruction[3]) pc[context_id] <= instruction[9:4];
+                    OP_JMP_PIN: begin end
                     OP_SET_PIN: pin_out[instruction[2:0]] <= instruction[3];
                     OP_DIR_PIN: pin_oe[instruction[2:0]] <= instruction[3];
                     OP_CAPTURE: begin
@@ -373,7 +398,6 @@ module protocol_engine #(
                     OP_SYS: begin
                         if (EXTENDED_ISA && !dual_active && (instruction[11:10] == 2'b01) && !return_valid[0]) begin
                             return_pc[0] <= pc[0] + 1'b1; return_valid[0] <= 1;
-                            pc[0] <= instruction[9:0];
                         end else if (EXTENDED_ISA && !dual_active && (instruction[11:8] >= 8)) begin
                             case (instruction[11:8])
                                 8: begin accumulator <= accumulator ^ scratch[instruction[7:0]]; zero_flag <= (accumulator == scratch[instruction[7:0]]); end
@@ -399,9 +423,7 @@ module protocol_engine #(
                         else if ((instruction[11:6] == SYS_CALL_GROUP) && !return_valid[context_id]) begin
                             return_pc[context_id] <= pc[context_id] + 1'b1;
                             return_valid[context_id] <= 1;
-                            pc[context_id] <= instruction[5:0];
                         end else if ((instruction == SYS_RETURN) && return_valid[context_id]) begin
-                            pc[context_id] <= return_pc[context_id];
                             return_valid[context_id] <= 0;
                         end else if ((instruction[11:6] == SYS_START_CTX_GROUP) && !dual_active) begin
                             // F300 | address: start context 1 once per RUN.
