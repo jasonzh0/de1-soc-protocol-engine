@@ -9,6 +9,12 @@ inputs, byte shifts, counted loops, pin waits/branches, one-level calls per cont
 and a captured-byte result register. A generic second instruction context enables
 full-duplex UART without fixed UART hardware. See [ISA](docs/isa.md).
 
+**Experimental USB protocol emulation:** a separate FPGA profile runs low-speed
+HID keyboard firmware on this same core, with optional generic byte-processing
+instructions and larger memory. See the [USB guide](docs/usb.md) for simulation,
+`quartus/de1_soc_usb.qpf`, external-PHY requirements and current limitations.
+Physical attachment is disabled by default; this is not yet ASIC USB support.
+
 ## Run on DE1-SoC H1
 
 The existing Quartus project now boots the protocol engine, **not the CHUD demo**.

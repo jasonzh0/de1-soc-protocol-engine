@@ -7,7 +7,32 @@ YOSYS ?= yosys
 PYTHON ?= python3
 ARDUINO_CLI ?= arduino-cli
 
-test: test-fpga test-fpga-legacy test-tt test-protocols test-arduino-host
+.PHONY: usb-firmware test-usb test-usb-board test-extended quartus-usb
+USB_IDS ?=
+usb-firmware:
+	mkdir -p build
+	$(CXX) -std=c++17 -Wall -Wextra -Werror firmware/usb_ls/build_firmware.cpp -o build/build_usb_firmware
+	build/build_usb_firmware build/usb_ls.hex build/usb_ls.lst $(USB_IDS)
+
+test-usb: usb-firmware
+	$(IVERILOG) -g2012 -Wall -s tb_usb_ls -o build/tb_usb_ls test/tb_usb_ls.v src/protocol_engine.v
+	$(VVP) build/tb_usb_ls
+	$(VVP) build/tb_usb_ls +HOST_BIT_NS=658
+	$(VVP) build/tb_usb_ls +HOST_BIT_NS=676
+
+test-usb-board: usb-firmware
+	$(IVERILOG) -g2012 -Wall -DUSB_BOARD_TEST -s tb_usb_ls -o build/tb_usb_board test/tb_usb_ls.v src/protocol_engine.v rtl/usb_firmware_bootloader.v rtl/de1_usb_top.v
+	$(VVP) build/tb_usb_board
+
+quartus-usb: usb-firmware
+	cd quartus && $(QUARTUS_SH) --flow compile de1_soc_usb
+
+test: test-fpga test-fpga-legacy test-tt test-protocols test-arduino-host test-extended
+
+test-extended:
+	mkdir -p build
+	$(IVERILOG) -g2012 -Wall -s tb_extended_isa -o build/tb_extended_isa test/tb_extended_isa.v src/protocol_engine.v
+	$(VVP) build/tb_extended_isa
 
 # Host regression runs the real sketch loop with deterministic peripheral doubles.
 test-arduino-host:

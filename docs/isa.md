@@ -113,3 +113,7 @@ Addresses now span 0–63: ADDR_HI accepts 0–3, WRITE/PC wrap at 64, jumps use
 bits. Host command 6 selects status/result readback; 7 remains invalid.
 Loading still uses the synchronous TT nibble bus or FPGA core write port.
 There is **no UART upload transport or Python library** in this version.
+
+The opt-in FPGA [byte-processing extension](isa-extended.md) adds wider memory,
+scratch/ALU, generic serial coding, CRC and sampling operations for experimental
+USB firmware. It is disabled in this default ISA/Tiny Tapeout configuration.

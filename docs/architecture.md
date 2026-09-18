@@ -179,6 +179,24 @@ are added, update each applicable explicit source list: `info.yaml`, Makefile,
 
 GitHub CI is paused by user request. Keep it paused until explicitly requested.
 
+## Experimental USB profile
+
+The [USB experiment](usb.md) uses this same core with `PROGRAM_ADDR_WIDTH=11`
+and `EXTENDED_ISA=1`. It is single-context firmware over generic byte-processing,
+CRC, NRZI/stuffing and pin-sampling instructions. USB requests, descriptors and
+endpoint state live in `firmware/usb_ls/build_firmware.cpp`, not in RTL.
+The [extension contract](isa-extended.md) defines widths, timing and errors.
+
+`rtl/usb_firmware_bootloader.v` loads a generated FPGA ROM through the existing
+programming port; `rtl/de1_usb_top.v` gates an external PHY and implements board
+controls. `quartus/de1_soc_usb.qpf` owns the separate source/timing configuration.
+These files are not part of `info.yaml`. The existing board project and ASIC
+wrapper retain their 64-word defaults and unchanged loader interface.
+
+The wider asynchronous store and scratch RAM are not hard SRAMs. Physical fit,
+memory/fetch redesign and host-loader expansion are prerequisites to enabling
+USB on the ASIC. This FPGA-first profile must not be described as fitting 6x4.
+
 ## Active FPGA boot contract
 
 The QSF selects `de1_protocol_top`, which connects the shared engine to the
