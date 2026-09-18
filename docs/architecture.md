@@ -53,10 +53,11 @@ those commands, or drives the core's word-write interface directly.
   `program_ready` after reset before writing; the default is immediately ready.
 - Keep `run=0` during the final write edge; assert run on a later edge.
 - Taking `run` low restarts PC/wait/output/fault state; it is a restart, not a
-  resumable pause. Program words and validity survive a halt.
-- Reset invalidates all 64 words. Unwritten memory cannot execute, even though
-  the 1024 data bits themselves have no reset. An invalid address fetch or opcode
-  latches fault and releases the output enables.
+  resumable pause. Program contents survive a halt.
+- Reset invalidates the legacy profile through its per-word bitmap; clocked
+  profiles scrub memory before asserting `program_ready`. Unwritten memory
+  cannot execute. An invalid fetch or opcode latches fault and releases output
+  enables. See [memory initialization and timing](sram-redesign.md).
 - `pin_out` is a value and `pin_oe` is a drive mask. The caller implements the
   physical tri-state. The core contains no `inout` or device-specific cells.
 - In single-context mode WAIT N takes N+1 clocks; SET/DIR/JMP take one. Changes to fetch latency or
@@ -74,7 +75,7 @@ those commands, or drives the core's word-write interface directly.
 | UART/SPI host transport | Transport adapter to program_loader or core write port |
 | New instruction | Core ISA and timing contract, firmware and behavioral tests |
 | New protocol firmware | Instruction words, without replacing the core |
-| SRAM implementation | Internal program-store seam, once an actual macro is selected |
+| Memory implementation | Internal program_store backend; preserve its initialization/fetch contract |
 | Larger instruction memory | Coordinated address width, loader, firmware, tests, and physical-flow change |
 
 UART, SPI and I2C are firmware configurations of one engine, not three
@@ -121,43 +122,29 @@ that command bus coherent. An asynchronous host would need a separate, defined
 transfer protocol. Firmware must also budget protocol-input synchronization
 latency; synchronizers are not a substitute for external bus timing analysis.
 
-## Area and program-memory gate before tapeout
+## Program-memory profiles and tapeout gate
 
-The store is **64 x 16-bit instruction words = 128 bytes**, not 64 general-purpose
-registers and not 64 words per context. Both contexts share it. The duplex UART
-image occupies addresses 0 through 43 including padding; the I2C-read image uses
-47 words. These examples fit, but richer protocol state machines may not.
+The default store is **64 × 16-bit instruction words = 128 bytes**, not 64
+general-purpose registers or 64 words per context. Both contexts share it.
+The duplex UART image occupies addresses 0–43 including padding; I2C read uses
+47 words. The default ASIC profile keeps this small register-backed store.
 
-Generic `synth -noabc` currently maps the program data to 1,024 enabled flip-flops;
-the core also has 64 validity bits, thread state and substantial mux logic. This
-is a structural warning, not a foundry-cell area estimate or evidence of 6x4 fit.
-The FPGA-only boot ROMs are excluded from ASIC sources.
+The USB FPGA and opt-in SRAM ASIC profiles use **2048 × 16-bit instructions =
+4 KiB**. The selected IHP 1024×32 macro packs two instructions per word. The
+wide host loader, scrub initialization and synchronous fetch are implemented
+and tested; 256-byte scratch storage remains registers. Wider program storage
+does not widen every encoded branch/call target: see the
+[extended ISA](isa-extended.md) and [memory contract](sram-redesign.md).
 
-The initial evaluation and remaining physical-design checks:
+The [SRAM redesign](sram-redesign.md) is the current source for backend details,
+measured area and remaining physical-integration work. The
+[original memory evaluation](asic-memory-evaluation.md) is historical baseline
+data; [macro source notes](asic-memory-sources.md) record PDK provenance.
 
-1. Measure the current design with the exact CMOS5L flow/PDK: mapped cell area,
-   placed utilization, routing and timing. CI remains paused; generic synthesis
-   alone cannot settle the area question.
-2. Identify a hard SRAM supported by that flow, including simulation model,
-   Liberty timing, LEF/GDS, supply connections, metal-stack compatibility and
-   placement/PDN clearances. Tiny Tapeout documents IHP SRAM options but warns
-   integration is nontrivial; its SG13G2 table is not a CMOS5L fit guarantee.
-   See [Tiny Tapeout memory guidance](https://www.tinytapeout.com/specs/memory/).
-3. Compare total placed cost, not just bits: macro + read controller + validity
-   mechanism + execution logic. At only 128 bytes, macro minimum size and
-   peripheral overhead matter; more SRAM capacity may be useful nonetheless.
-4. Design synchronous fetch around the chosen read latency. Alternating contexts
-   may allow fetch/execute overlap, but branches, waits, reset, start-up and
-   single-context mode need explicit treatment and cycle-level tests. Do not
-   merely change the Verilog array and assume SRAM inference or preserved timing.
-5. If capacity grows, update PC widths, branch/call encodings, host addressing,
-   validity handling and firmware together. Current six-bit targets cannot reach
-   a larger memory just by increasing its array depth.
-
-An explicit IHP SRAM candidate is now RTL-integrated, model-tested and
-technology-mapped; it is not yet physically integrated or the submission default.
-See [measured redesign results](sram-redesign.md). The original evaluation is
-retained in [ASIC memory evaluation](asic-memory-evaluation.md).
+Before changing the submission default, supply and validate macro physical
+views, placement and power hookups, then complete routed fit, 50 MHz timing,
+DRC/LVS/precheck and mapped protocol tests. Technology mapping alone does not
+establish 6x4 fit or timing closure. FPGA boot ROMs remain outside ASIC sources.
 
 ## Verification and source lists
 

@@ -41,8 +41,9 @@ make test-template
 
 With uv: `uv run --with-requirements test/requirements.txt make check-template test-template`.
 
-check-template validates metadata, ports, source lists, config identity, clock
-consistency and the CI pause. It is not the physical Tiny Tapeout precheck.
+check-template validates metadata, ports, source lists, both Quartus profiles,
+the default USB attach guard, config identity, clock consistency and the CI
+pause. It is not the physical Tiny Tapeout precheck.
 test-template checks public-pin loader/UART at RTL; the same harness is wired
 for the official gate-level action. Full protocol regression currently runs
 in make test-protocols at RTL, not against a mapped netlist.

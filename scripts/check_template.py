@@ -38,13 +38,29 @@ def main():
     require(synth_line is not None and synth_line[1].split() == [f"src/{s}" for s in sources],
             "synthesis source list differs from info.yaml")
     require(f"-top {top}" in synth, "synthesis top mismatch")
-    qsf = (ROOT / "quartus/de1_soc_demo.qsf").read_text()
-    require("-name TOP_LEVEL_ENTITY de1_protocol_top" in qsf, "wrong active Quartus top")
-    board_sources = re.findall(r"-name VERILOG_FILE (\S+)", qsf)
-    require(board_sources == ["../src/protocol_engine.v", "../src/program_store.v", "../rtl/firmware_bootloader.v",
-                              "../rtl/de1_protocol_top.v"], "Quartus source list drift")
-    for source in board_sources:
-        require((ROOT / "quartus" / source).is_file(), f"missing Quartus source: {source}")
+    board_profiles = {
+        "de1_soc_demo": ("de1_protocol_top", "firmware_bootloader"),
+        "de1_soc_usb": ("de1_usb_top", "usb_firmware_bootloader"),
+    }
+    for profile, (board_top, bootloader) in board_profiles.items():
+        qsf = (ROOT / "quartus" / f"{profile}.qsf").read_text()
+        require(f"-name TOP_LEVEL_ENTITY {board_top}" in qsf,
+                f"wrong Quartus top: {profile}")
+        board_sources = re.findall(r"-name VERILOG_FILE (\S+)", qsf)
+        require(board_sources == ["../src/protocol_engine.v", "../src/program_store.v",
+                                  f"../rtl/{bootloader}.v", f"../rtl/{board_top}.v"],
+                f"Quartus source list drift: {profile}")
+        for source in board_sources:
+            require((ROOT / "quartus" / source).is_file(),
+                    f"missing Quartus source: {profile}/{source}")
+        require(f"-name SDC_FILE {profile}.sdc" in qsf and
+                (ROOT / "quartus" / f"{profile}.sdc").is_file(),
+                f"missing Quartus timing constraints: {profile}")
+        require("source de1_soc_pins.qsf" in qsf,
+                f"missing shared board pins: {profile}")
+        if profile == "de1_soc_usb":
+            require("set_parameter -name USB_ATTACH_ALLOWED 0" in qsf,
+                    "USB physical attachment must stay disabled by default")
     require(all("firmware_bootloader" not in s for s in sources),
             "FPGA-only boot ROM must not be part of ASIC")
     rtl = (ROOT / "src" / f"{top}.v").read_text()

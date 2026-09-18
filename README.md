@@ -4,7 +4,7 @@ One programmable Verilog engine for FPGA prototyping and a Tiny Tapeout ASIC.
 UART, SPI and I2C behavior comes from replaceable instructions—not three fixed
 protocol peripherals. The Python library and UART program uploader are deferred.
 
-The engine has **64×16-bit writable instructions**, eight I/O pins, synchronized
+The default profile has **64×16-bit writable instructions**, eight I/O pins, synchronized
 inputs, byte shifts, counted loops, pin waits/branches, one-level calls per context,
 and a captured-byte result register. A generic second instruction context enables
 full-duplex UART without fixed UART hardware. See [ISA](docs/isa.md).
@@ -19,6 +19,16 @@ Physical attachment is disabled by default; this is not yet ASIC USB support.
 memory and an explicit IHP 4 KiB SRAM. The USB FPGA project uses the clocked RAM
 backend; the default submission remains the tested 64-word profile pending
 physical integration. See [SRAM redesign, loader contract and area](docs/sram-redesign.md).
+
+## Build profiles
+
+All profiles use the same core; memory and board/pad adapters differ.
+
+| Profile | Program memory | Entry point | Status |
+| --- | --- | --- | --- |
+| UART/SPI/I2C FPGA and default ASIC | 64×16-bit registers | `quartus/de1_soc_demo.qpf`; `info.yaml` | Existing protocol examples; default submission |
+| Experimental USB FPGA | 2048×16-bit synchronous RAM | `quartus/de1_soc_usb.qpf` | Simulated; external PHY required, attachment disabled |
+| SRAM ASIC candidate | 2048×16-bit in one IHP 1024×32 SRAM | `make synth-sram` | Model-tested and mapped; physical integration pending |
 
 ## Run on DE1-SoC H1
 
@@ -94,26 +104,43 @@ changing hardware. See the firmware guide for exact configuration locations.
 | Path | Purpose |
 | --- | --- |
 | src/protocol_engine.v | Shared programmable execution core |
+| src/program_store.v | Interchangeable program-memory backends and initialization |
 | src/program_loader.v | Host program staging and run control |
 | src/tt_um_jasonzh0_protocol_engine.v | ASIC pad adapter, status/result selection |
 | rtl/de1_protocol_top.v | H1 reset, mode, GPIO, LEDs and displays |
 | rtl/firmware_bootloader.v | FPGA-only firmware ROM and load sequence |
-| firmware/ | UART TX/RX, SPI and I2C programs |
+| rtl/de1_usb_top.v, rtl/usb_firmware_bootloader.v | Experimental USB board adapter and ROM loader |
+| firmware/ | UART TX/RX, SPI and I2C images; USB firmware generator |
 | arduino/uno_protocol_tester/ | Uno R3 UART, SPI-peripheral and I2C-device test sketch |
 | quartus/de1_soc_demo.qpf | Active Quartus project |
 | info.yaml, src/config.json | Tiny Tapeout submission metadata/config |
 
 ## Verify locally
 
-Install Icarus Verilog and Make:
+Install Icarus Verilog, Make and a C++17 compiler. Plain `make` prints help;
+it does not download dependencies or start a hardware build.
 
 ```sh
+make help
 make test
 ```
 
-This runs the active FPGA boot/mode regression, legacy key demo, TT loader tests
-and public-pin UART/SPI/I2C peer tests. Individual targets:
-`test-fpga`, `test-fpga-legacy`, `test-tt`, `test-protocols`.
+`make test` runs the active FPGA boot/mode regression, legacy key demo, TT loader,
+public-pin UART/SPI/I2C peers, Arduino host regression, extended ISA, and memory
+safety/fetch-equivalence tests. It does not include the longer USB or IHP suites:
+
+| Command | Additional coverage |
+| --- | --- |
+| `make test-sync` | Clocked RAM: extended ISA, UART/SPI/I2C, USB at three host rates |
+| `make test-usb` | USB using the legacy asynchronous memory backend |
+| `make test-usb-board` | Actual USB FPGA boot/PHY adapter with clocked RAM |
+| `make test-ihp-memory` | Pinned IHP SRAM model, all protocols, USB through TT host pins |
+
+`test-ihp-memory` and `synth-sram` explicitly download pinned IHP model/Liberty
+files into ignored `build/ihp-sram/`. Generated firmware, executables, waveforms,
+and synthesis reports stay under ignored `build/`; template simulation outputs
+stay under `test/sim_build/`. Keep checked-in `firmware/*.hex`: these are source
+images used by the FPGA and tests, not disposable build products.
 
 With `test/requirements.txt` installed, `make check-template test-template`
 checks the template contract and Cocotb harness. Cocotb is for official-flow
